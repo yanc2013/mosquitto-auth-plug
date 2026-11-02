@@ -89,6 +89,35 @@ the plugin, and
 * a recent version of OpenSSL (if the version with your OS, e.g., OS X, is too old, you may need to use one
 supplied by home brew or build your own).
 
+### Quick Start (Ubuntu / Debian)
+
+1. **Install system dependencies & build tools**:
+```bash
+sudo apt update
+sudo apt install build-essential
+sudo apt install libmosquitto-dev libssl-dev libcurl4-openssl-dev
+```
+
+2. **Clone Mosquitto v2.0.11 source (for broker internal headers)**:
+```bash
+# Clone it into contrib/ or your preferred workspace directory
+sudo git clone --branch v2.0.11 [https://github.com/eclipse/mosquitto.git](https://github.com/eclipse/mosquitto.git) contrib/mosquitto-2.0.11
+```
+
+3. **Configure config.mk**:
+Make sure your config.mk points to the Mosquitto source path:
+```
+MOSQUITTO_SRC = contrib/mosquitto-2.0.11
+```
+
+4. **Compile**:
+The build artifacts and intermediate object files will automatically be placed in the build/ directory, keeping your source root clean.
+```bash
+cd mosquitto-auth-plug/
+make clean 
+make
+```
+
 Copy `config.mk.in` to `config.mk` and modify `config.mk` to suit your building environment. In particular, you have
 to configure which back-ends you want to provide as well as the path to the
 [Mosquitto] source and its library, and possibly the path to OpenSSL (`OPENSSLDIR`).
