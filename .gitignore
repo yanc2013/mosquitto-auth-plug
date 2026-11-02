@@ -8,3 +8,4 @@ Makefile
 *.a
 config.mk
 sundry
+contrib/mosquitto-2.0.11/
