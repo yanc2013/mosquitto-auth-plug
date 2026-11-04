@@ -46,14 +46,6 @@ void (*_log)(int priority, const char *fmt, ...);
 
 void log_init(void)
 {
-// #if MOSQ_AUTH_PLUGIN_VERSION >= 3
-// 	_log = __log;
-// #elif (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
-// 	_log = mosquitto_log_printf;
-// #else
-// 	_log = __log;
-// #endif
-
 	log_quiet = 0;
 	log_dest = AUTH_LOG_STDERR;
 	_log = __auth_log;
