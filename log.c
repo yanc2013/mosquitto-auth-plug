@@ -27,6 +27,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -38,18 +40,52 @@
 #include "log.h"
 
 int log_quiet=0;
+auth_log_dest_t log_dest = AUTH_LOG_STDERR;
 
 void (*_log)(int priority, const char *fmt, ...);
 
 void log_init(void)
 {
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-	_log = __log;
-#elif (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
-	_log = mosquitto_log_printf;
+// #if MOSQ_AUTH_PLUGIN_VERSION >= 3
+// 	_log = __log;
+// #elif (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
+// 	_log = mosquitto_log_printf;
+// #else
+// 	_log = __log;
+// #endif
+
+	log_quiet = 0;
+	log_dest = AUTH_LOG_STDERR;
+	_log = __auth_log;
+}
+
+void __auth_log(int priority, const char *fmt, ...)
+{
+	if (log_quiet)
+		return;
+
+	char *buffer = NULL;
+	va_list va;
+	va_start(va, fmt);
+
+	if (vasprintf(&buffer, fmt, va) != -1) {
+		switch (log_dest) {
+			case AUTH_LOG_BROKER:
+#if (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
+				mosquitto_log_printf(priority, "%s", buffer);
 #else
-	_log = __log;
+				__log(priority, "%s", buffer);
 #endif
+				break;
+			case AUTH_LOG_STDERR:
+			default:
+				__log(priority, "%s", buffer);
+				break;
+		}
+		free(buffer);
+	}
+
+	va_end(va);
 }
 
 void __log(int priority, const char *fmt, ...)
@@ -57,8 +93,8 @@ void __log(int priority, const char *fmt, ...)
 	va_list va;
 	time_t now;
 
-	if (log_quiet && priority <= LOG_DEBUG)
-		return;
+	// if (log_quiet && priority <= LOG_DEBUG)
+	// 	return;
 
 	time(&now);
 

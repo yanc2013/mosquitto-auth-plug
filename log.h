@@ -36,10 +36,18 @@
 #define LOG_NOTICE (2)
 #endif
 
+typedef enum {
+    AUTH_LOG_STDERR = 0,
+    AUTH_LOG_BROKER = 1,
+    AUTH_LOG_FILE   = 2
+} auth_log_dest_t;
+
 extern void (*_log)(int priority, const char *fmt, ...);
 
 void log_init(void);
+void __auth_log(int priority, const char *fmt, ...);
 void __log(int priority, const char *fmt, ...);
 void _fatal(const char *fmt, ...);
 
 extern int log_quiet;
+extern auth_log_dest_t log_dest;

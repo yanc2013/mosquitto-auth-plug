@@ -97,6 +97,7 @@ struct backend_p {
 };
 
 int pbkdf2_check(char *password, char *hash);
+static int log_configure(void);
 
 int mosquitto_auth_plugin_version(void)
 {
@@ -181,6 +182,17 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 		if (!strcmp(o->key, "topic_prefix"))
 			ud->topicprefix = strdup(o->value);
 #endif
+	}
+
+	/*
+	 Set up p_stab("log_dest")
+	 # stderr | broker | file
+	 auth_opt_log_dest broker
+	 # file only
+	 # auth_opt_log_file /var/log/mosquitto/auth-plug.log
+	*/
+	if (log_configure() != 0) {
+		_fatal("Invalid log_dest configuration");
 	}
 
 	/*
@@ -803,4 +815,21 @@ int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *ide
 #else /* !BE_PSK */
 	return MOSQ_DENY_AUTH;
 #endif /* BE_PSK */
+}
+
+static int log_configure(void)
+{
+	const char *value = p_stab("log_dest");
+	if (value == NULL || strcmp(value, "stderr") == 0) {
+		log_dest = AUTH_LOG_STDERR;
+	} else if (strcmp(value, "broker") == 0) {
+		log_dest = AUTH_LOG_BROKER;
+	} else if (strcmp(value, "file") == 0) {
+		log_dest = AUTH_LOG_FILE;
+	} else {
+		__log(LOG_NOTICE, "Warning: Invalid log_dest value (%s), using stderr.", value);
+		return -1;
+	}
+
+	return 0;
 }
