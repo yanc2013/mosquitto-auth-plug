@@ -38,6 +38,7 @@ struct cliententry {
 	void *key;
 	char *username;
 	char *clientid;
+	char *origin_clientid;  /* Actual MQTT Client ID */
 	UT_hash_handle hh;
 };
 

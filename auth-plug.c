@@ -102,8 +102,9 @@ static int log_configure(void);
 int mosquitto_auth_plugin_version(void)
 {
 	log_init();
-	_log(LOG_NOTICE, "*** auth-plug: startup");
+	_log(LOG_NOTICE, "*** auth-plug: startup, auth plugin API version: %d", MOSQ_AUTH_PLUGIN_VERSION);
 
+	// mosquitto 2.0.11 auth plugin API version: 4
 	return MOSQ_AUTH_PLUGIN_VERSION;
 }
 
@@ -483,6 +484,19 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 		}
 	}
 
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+	if (ud->clients != NULL) {
+		struct cliententry *e, *tmp;
+		HASH_ITER(hh, ud->clients, e, tmp) {
+			HASH_DEL(ud->clients, e);
+			free(e->username);
+			free(e->clientid);
+			free(e->origin_clientid);
+			free(e);
+		}
+	}
+#endif
+
 	if (ud->be_list) {
 		struct backend_p **bep;
 
@@ -529,16 +543,20 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 #if MOSQ_AUTH_PLUGIN_VERSION >=3
 	struct cliententry *e;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
+	const char *id = mosquitto_client_id(client);
 	if (e) {
 		free(e->username);
 		free(e->clientid);
+		free(e->origin_clientid);
 		e->username = strdup(username);
 		e->clientid = strdup("client id not available");
+		e->origin_clientid = id ? strdup(id) : NULL;
 	} else {
 		e = (struct cliententry *)malloc(sizeof(struct cliententry));
 		e->key = (void *)client;
 		e->username = strdup(username);
 		e->clientid = strdup("client id not available");
+		e->origin_clientid = id ? strdup(id) : NULL;
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
 #endif
@@ -624,11 +642,13 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	struct cliententry *e;
 	const char *clientid = NULL;
 	const char *username = NULL;
+	const char *origin_clientid = NULL;
 	const char *topic = msg->topic;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	if (e) {
 		clientid = e->clientid;
 		username = e->username;
+		origin_clientid = e->origin_clientid;
 	} else {
 		bool client_cert = (mosquitto_client_certificate(client) != NULL);
 
@@ -664,11 +684,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		return MOSQ_DENY_ACL;
 	}
 
-	_log(LOG_DEBUG, "mosquitto_auth_acl_check(..., %s, %s, %s, %s)",
+	_log(LOG_DEBUG, "mosquitto_auth_acl_check(..., %s, %s, %s, %s, %s)",
 		clientid ? clientid : "NULL",
 		username ? username : "NULL",
 		topic ? topic : "NULL",
-		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE" );
+		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE",
+		origin_clientid ? origin_clientid : "NULL");
 
 
 	granted = acl_cache_q(clientid, username, topic, access, userdata);
