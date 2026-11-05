@@ -46,8 +46,10 @@ extern void (*_log)(int priority, const char *fmt, ...);
 
 void log_init(void);
 void __auth_log(int priority, const char *fmt, ...);
+void __file_log(int priority, const char *fmt, ...);
 void __log(int priority, const char *fmt, ...);
 void _fatal(const char *fmt, ...);
 
 extern int log_quiet;
 extern auth_log_dest_t log_dest;
+extern char log_file[2048];

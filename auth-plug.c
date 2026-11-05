@@ -188,7 +188,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	 Set up p_stab("log_dest")
 	 # stderr | broker | file
 	 auth_opt_log_dest broker
-	 # file only
+	 # Only applies when file is specified
 	 # auth_opt_log_file /var/log/mosquitto/auth-plug.log
 	*/
 	if (log_configure() != 0) {
@@ -825,10 +825,17 @@ static int log_configure(void)
 	} else if (strcmp(value, "broker") == 0) {
 		log_dest = AUTH_LOG_BROKER;
 	} else if (strcmp(value, "file") == 0) {
-		log_dest = AUTH_LOG_FILE;
+		const char *file = p_stab("log_file");
+		if (file != NULL && file[0] != '\0') {
+			snprintf(log_file, sizeof(log_file), "%s", file);
+			log_dest = AUTH_LOG_FILE;
+		} else {
+			__log(LOG_NOTICE, "Warning: log_file is not configured, using stderr.");
+			log_dest = AUTH_LOG_STDERR;
+		}
 	} else {
 		__log(LOG_NOTICE, "Warning: Invalid log_dest value (%s), using stderr.", value);
-		return -1;
+		log_dest = AUTH_LOG_STDERR;
 	}
 
 	return 0;

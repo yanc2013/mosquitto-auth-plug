@@ -148,7 +148,8 @@ Options therein with a leading ```auth_opt_``` are handed to the plugin. The fol
 | auth_cacheseconds | 0                 |             | number of seconds to cache AUTH lookups. 0 disables
 | acl_cachejitter   | 0                 |             | maximum number of seconds to add/remove to ACL lookups cache TTL. 0 disables
 | auth_cachejitter  | 0                 |             | maximum number of seconds to add/remove to AUTH lookups cache TTL. 0 disables
-| log_dest          | stderr            |             | this option to support Mosquitto broker logging(stderr/broker)
+| log_dest          | stderr            |             | this option to support Mosquitto broker logging(stderr/broker/file)
+| log_file          |                   |             | only applies when file is specified in log_dest
 
 Individual back-ends each have various additional options described in the sections below.
 
