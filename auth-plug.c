@@ -492,6 +492,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 			free(e->username);
 			free(e->clientid);
 			free(e->origin_clientid);
+			free(e->backend_name);
 			free(e);
 		}
 	}
@@ -548,15 +549,18 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		free(e->username);
 		free(e->clientid);
 		free(e->origin_clientid);
+		free(e->backend_name);
 		e->username = strdup(username);
 		e->clientid = strdup("client id not available");
 		e->origin_clientid = id ? strdup(id) : NULL;
+		e->backend_name = NULL;
 	} else {
 		e = (struct cliententry *)malloc(sizeof(struct cliententry));
 		e->key = (void *)client;
 		e->username = strdup(username);
 		e->clientid = strdup("client id not available");
 		e->origin_clientid = id ? strdup(id) : NULL;
+		e->backend_name = NULL;
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
 #endif
@@ -610,6 +614,12 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		}
 	}
 
+#if MOSQ_AUTH_PLUGIN_VERSION >=3	
+	if (authenticated && e) {
+		e->backend_name = backend_name ? strdup(backend_name) : NULL;
+	}
+#endif
+
 	_log(LOG_DEBUG, "getuser(%s) AUTHENTICATED=%d by %s",
 		username, authenticated, (backend_name) ? backend_name : "none");
 
@@ -643,12 +653,14 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	const char *clientid = NULL;
 	const char *username = NULL;
 	const char *origin_clientid = NULL;
+	const char *auth_backend = NULL;
 	const char *topic = msg->topic;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	if (e) {
 		clientid = e->clientid;
 		username = e->username;
 		origin_clientid = e->origin_clientid;
+		auth_backend = e->backend_name;
 	} else {
 		bool client_cert = (mosquitto_client_certificate(client) != NULL);
 
@@ -741,8 +753,20 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 * Check authorization in the back-end used to authenticate the user.
 	 */
 
+	/* Authentication backend must be available */
+	if (auth_backend == NULL) {
+		_log(LOG_NOTICE, "aclcheck(%s): authentication backend not available", username ? username : "NULL");
+		granted = MOSQ_DENY_ACL;
+		goto outout;
+	}
+
 	for (bep = ud->be_list; bep && *bep; bep++) {
 		struct backend_p *b = *bep;
+
+		/* Only check the backend that authenticated this client */
+		if (strcmp(auth_backend, b->name) != 0) {
+			continue;
+		}
 
 		match = b->aclcheck((*bep)->conf, clientid, username, topic, access);
 		if (match == BACKEND_ALLOW) {
