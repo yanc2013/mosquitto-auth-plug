@@ -38,7 +38,6 @@ struct cliententry {
 	void *key;
 	char *username;
 	char *clientid;         /* Actual MQTT Client ID */
-	// char *origin_clientid;  /* Actual MQTT Client ID */
 	char *backend_name;     /* Authentication backend */
 	UT_hash_handle hh;
 };

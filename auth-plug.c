@@ -505,7 +505,6 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 			HASH_DEL(ud->clients, e);
 			free(e->username);
 			free(e->clientid);
-			// free(e->origin_clientid);
 			free(e->backend_name);
 			free(e);
 		}
@@ -563,20 +562,15 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	if (e) {
 		free(e->username);
 		free(e->clientid);
-		// free(e->origin_clientid);
 		free(e->backend_name);
 		e->username = strdup(username);
 		e->clientid = id ? strdup(id) : NULL;
-		// e->clientid = strdup("client id not available");
-		// e->origin_clientid = id ? strdup(id) : NULL;
 		e->backend_name = NULL;
 	} else {
 		e = (struct cliententry *)malloc(sizeof(struct cliententry));
 		e->key = (void *)client;
 		e->username = strdup(username);
 		e->clientid = id ? strdup(id) : NULL;
-		// e->clientid = strdup("client id not available");
-		// e->origin_clientid = id ? strdup(id) : NULL;
 		e->backend_name = NULL;
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
@@ -681,15 +675,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	struct cliententry *e;
 	const char *clientid = NULL;
 	const char *username = NULL;
-	// const char *origin_clientid = NULL;
-	// const char *auth_backend = NULL;
 	bool client_cert_auth = false;
 	const char *topic = msg->topic;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	if (e) {
 		clientid = e->clientid;
 		username = e->username;
-		// origin_clientid = e->origin_clientid;
 		auth_backend = e->backend_name;
 	} else {
 		bool client_cert = (mosquitto_client_certificate(client) != NULL);
@@ -739,10 +730,8 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		username ? username : "NULL",
 		topic ? topic : "NULL",
 		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE");
-		// origin_clientid ? origin_clientid : "NULL");
 
 	// !client_cert_auth && auth_backend == NULL ???
-
 	granted = acl_cache_q(clientid, username, topic, access, userdata, auth_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
 		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d by backend %s",
