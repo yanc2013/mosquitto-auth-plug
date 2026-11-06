@@ -38,13 +38,14 @@ struct cacheentry {
         char hex[SHA_DIGEST_LENGTH * 2 + 1];    /* key within struct */
         int granted;
         time_t expire_time;
+        char *backend_name;       /* Authentication backend */
         UT_hash_handle hh;
 };
 
-void acl_cache(const char *clientid, const char *username, const char *topic, int access, int granted, void *userdata);
-int acl_cache_q(const char *clientid, const char *username, const char *topic, int access, void *userdata);
+void acl_cache(const char *clientid, const char *username, const char *topic, int access, int granted, void *userdata, const char *backend_name);
+int acl_cache_q(const char *clientid, const char *username, const char *topic, int access, void *userdata, const char *backend_name);
 
-void auth_cache(const char *username, const char *password, int granted, void *userdata);
-int auth_cache_q(const char *username, const char *password, void *userdata);
+void auth_cache(const char *username, const char *password, int granted, void *userdata, const char *backend_name);
+int auth_cache_q(const char *username, const char *password, void *userdata, const char **backend_name);
 
 #endif

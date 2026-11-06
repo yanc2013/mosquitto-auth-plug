@@ -84,7 +84,7 @@ static void hexify(const char *data, char *hex)
  * granted is what Mosquitto auth-plug actually granted
  */
 
-void acl_cache(const char *clientid, const char *username, const char *topic, int access, int granted, void *userdata)
+void acl_cache(const char *clientid, const char *username, const char *topic, int access, int granted, void *userdata, const char *backend_name)
 {
 	char *data;
 	char hex[SHA_DIGEST_LENGTH * 2 + 1];
@@ -92,6 +92,7 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 	struct userdata *ud = (struct userdata *)userdata;
 	time_t cacheseconds = ud->acl_cacheseconds;
 	time_t now;
+	const char *cache_backend = backend_name ? backend_name : "";
 
 	if (ud->acl_cacheseconds <= 0) {
 		return;
@@ -110,18 +111,21 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 
 	now = time(NULL);
 
-	data = malloc(strlen(clientid) + strlen(username) + strlen(topic) + 20);
-	sprintf(data, "%s:%s:%s:%d", clientid, username, topic, access);
+	data = malloc(strlen(cache_backend) + strlen(clientid) + strlen(username) + strlen(topic) + 20);
+	sprintf(data, "%s:%s:%s:%s:%d", cache_backend, clientid, username, topic, access);
 	hexify(data, hex);
 	free(data);
 
 	HASH_FIND_STR(ud->aclcache, hex, a);
 	if (a) {
 		a->granted = granted;
+		free(a->backend_name);
+		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d)", hex, clientid, username, access);
+			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 			HASH_DEL(ud->aclcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	} else {
@@ -129,8 +133,9 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 		strcpy(a->hex, hex);
 		a->granted = granted;
 		a->expire_time = now + cacheseconds;
+		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 		HASH_ADD_STR(ud->aclcache, hex, a);
-		_log(LOG_DEBUG, " Cached  [%s] for (%s,%s,%d)", hex, clientid, username, access);
+		_log(LOG_DEBUG, " Cached  [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 	}
 
 	/*
@@ -142,18 +147,20 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 		if (now > a->expire_time) {
 			_log(LOG_DEBUG, " Cleanup [%s]", a->hex);
 			HASH_DEL(ud->aclcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	}
 }
 
-int acl_cache_q(const char *clientid, const char *username, const char *topic, int access, void *userdata)
+int acl_cache_q(const char *clientid, const char *username, const char *topic, int access, void *userdata, const char *backend_name)
 {
 	char *data;
 	char hex[SHA_DIGEST_LENGTH * 2 + 1];
 	struct cacheentry *a;
 	struct userdata *ud = (struct userdata *)userdata;
 	int granted = MOSQ_ERR_UNKNOWN;
+	const char *cache_backend = backend_name ? backend_name : "";
 
 	if (ud->acl_cacheseconds <= 0) {
 		return (MOSQ_ERR_UNKNOWN);
@@ -163,8 +170,8 @@ int acl_cache_q(const char *clientid, const char *username, const char *topic, i
 		return (MOSQ_ERR_UNKNOWN);
 	}
 
-	data = malloc(strlen(clientid) + strlen(username) + strlen(topic) + 20);
-	sprintf(data, "%s:%s:%s:%d", clientid, username, topic, access);
+	data = malloc(strlen(cache_backend) + strlen(clientid) + strlen(username) + strlen(topic) + 20);
+	sprintf(data, "%s:%s:%s:%s:%d", cache_backend, clientid, username, topic, access);
 	hexify(data, hex);
 	free(data);
 
@@ -173,8 +180,9 @@ int acl_cache_q(const char *clientid, const char *username, const char *topic, i
 		// printf("---> CACHED! %d\n", a->granted);
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d)", hex, clientid, username, access);
+			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 			HASH_DEL(ud->aclcache, a);
+			free(a->backend_name);
 			free(a);
 		} else {
 			granted = a->granted;
@@ -187,7 +195,7 @@ int acl_cache_q(const char *clientid, const char *username, const char *topic, i
 /* granted is what Mosquitto auth-plug actually granted
  */
 
-void auth_cache(const char *username, const char *password, int granted, void *userdata)
+void auth_cache(const char *username, const char *password, int granted, void *userdata, const char *backend_name)
 {
 	char *data;
 	char hex[SHA_DIGEST_LENGTH * 2 + 1];
@@ -221,10 +229,14 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 	HASH_FIND_STR(ud->authcache, hex, a);
 	if (a) {
 		a->granted = granted;
+		/* Update backend name */
+		free(a->backend_name);
+		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s)", hex, username);
+			_log(LOG_DEBUG, " Expired [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
 			HASH_DEL(ud->authcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	} else {
@@ -232,9 +244,10 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 		strcpy(a->hex, hex);
 		a->granted = granted;
 		a->expire_time = now + cacheseconds;
+		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		HASH_ADD_STR(ud->authcache, hex, a);
-		_log(LOG_DEBUG, " Cached  [%s] for (%s)", hex, username);
+		_log(LOG_DEBUG, " Cached  [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
 	}
 
 	/*
@@ -246,13 +259,14 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 		if (now > a->expire_time) {
 			_log(LOG_DEBUG, " Cleanup [%s]", a->hex);
 			HASH_DEL(ud->authcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	}
 }
 
 
-int auth_cache_q(const char *username, const char *password, void *userdata)
+int auth_cache_q(const char *username, const char *password, void *userdata, const char **backend_name)
 {
 	char *data;
 	char hex[SHA_DIGEST_LENGTH * 2 + 1];
@@ -268,6 +282,11 @@ int auth_cache_q(const char *username, const char *password, void *userdata)
 		return (MOSQ_ERR_UNKNOWN);
 	}
 
+	/* Initialize output parameter */
+	if (backend_name) {
+		*backend_name = NULL;
+	}
+
 	data = malloc(strlen(username) + strlen(password) + 2);
 	sprintf(data, "%s:%s", username, password);
 	hexify(data, hex);
@@ -278,9 +297,13 @@ int auth_cache_q(const char *username, const char *password, void *userdata)
 		if (time(NULL) > a->expire_time) {
 			_log(LOG_DEBUG, " Expired [%s] for (%s)", hex, username);
 			HASH_DEL(ud->authcache, a);
+			free(a->backend_name);
 			free(a);
 		} else {
 			granted = a->granted;
+			if (backend_name) {
+				*backend_name = a->backend_name;
+			}
 		}
 	}
 

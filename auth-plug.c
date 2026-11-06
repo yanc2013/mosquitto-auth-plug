@@ -471,6 +471,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 
 		HASH_ITER(hh, ud->aclcache, a, tmp) {
 			HASH_DEL(ud->aclcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	}
@@ -480,6 +481,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 
 		HASH_ITER(hh, ud->authcache, a, tmp) {
 			HASH_DEL(ud->authcache, a);
+			free(a->backend_name);
 			free(a);
 		}
 	}
@@ -535,6 +537,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	struct backend_p **bep;
 	char *phash = NULL, *backend_name = NULL;
 	int match, authenticated = FALSE, nord, granted, rc, has_error = FALSE;
+	const char *cached_backend = NULL;
 
 	if (!username || !*username || !password || !*password)
 		return MOSQ_DENY_AUTH;
@@ -565,10 +568,21 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	}
 #endif
 
-	granted = auth_cache_q(username, password, userdata);
+	granted = auth_cache_q(username, password, userdata, &cached_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
 		_log(LOG_DEBUG, "getuser(%s) CACHEDAUTH: %d",
 			username, (granted == MOSQ_ERR_SUCCESS) ? TRUE : FALSE);
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+		if (e) {
+			free(e->backend_name);
+			e->backend_name = NULL;
+			if (granted == MOSQ_ERR_SUCCESS && cached_backend) {
+				e->backend_name = strdup(cached_backend);
+			}
+		}
+#endif
+
 		return granted;
 	}
 
@@ -633,7 +647,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 			username);
 		granted = MOSQ_ERR_UNKNOWN;
 	}
-	auth_cache(username, password, granted, userdata);
+	auth_cache(username, password, granted, userdata, backend_name);
 	return granted;
 }
 
@@ -648,12 +662,13 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	char *backend_name = NULL;
 	int match = 0, authorized = FALSE, has_error = FALSE;
 	int granted = MOSQ_DENY_ACL;
+	const char *auth_backend = NULL;
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	struct cliententry *e;
 	const char *clientid = NULL;
 	const char *username = NULL;
 	const char *origin_clientid = NULL;
-	const char *auth_backend = NULL;
+	// const char *auth_backend = NULL;
 	bool client_cert_auth = false;
 	const char *topic = msg->topic;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
@@ -710,11 +725,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE",
 		origin_clientid ? origin_clientid : "NULL");
 
+	// !client_cert_auth && auth_backend == NULL ???
 
-	granted = acl_cache_q(clientid, username, topic, access, userdata);
+	granted = acl_cache_q(clientid, username, topic, access, userdata, auth_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
-		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d",
-			username, topic, access, granted);
+		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d by backend %s",
+			username, topic, access, granted, auth_backend ? auth_backend : "none");
 		return (granted);
 	}
 
@@ -810,7 +826,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		granted = MOSQ_ERR_UNKNOWN;
 	}
 
-	acl_cache(clientid, username, topic, access, granted, userdata);
+	acl_cache(clientid, username, topic, access, granted, userdata, auth_backend);
 	return (granted);
 
 }
