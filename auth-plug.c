@@ -144,6 +144,9 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	ud->aclcache = NULL;
 	ud->authcache = NULL;
 	ud->clients = NULL;
+	// log_quiet = 0;
+	/* Default: enabled */
+	ud->acl_deny_special_chars = 1;
 
 	/*
 	 * Shove all options Mosquitto gives the plugin into a hash,
@@ -177,6 +180,15 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 				log_quiet = 1;
 			}else{
 				_log(LOG_NOTICE, "Error: Invalid log_quiet value (%s).", o->value);
+			}
+		}
+		if (!strcmp(o->key, "acl_deny_special_chars")) {
+			if(!strcmp(o->value, "false") || !strcmp(o->value, "0")){
+				ud->acl_deny_special_chars = 0;
+			}else if(!strcmp(o->value, "true") || !strcmp(o->value, "1")){
+				ud->acl_deny_special_chars = 1;
+			}else{
+				_log(LOG_NOTICE, "Warning: Invalid acl_deny_special_chars value (%s). Defaulting to true", o->value);
 			}
 		}
 #if 0
@@ -493,7 +505,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 			HASH_DEL(ud->clients, e);
 			free(e->username);
 			free(e->clientid);
-			free(e->origin_clientid);
+			// free(e->origin_clientid);
 			free(e->backend_name);
 			free(e);
 		}
@@ -551,18 +563,20 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	if (e) {
 		free(e->username);
 		free(e->clientid);
-		free(e->origin_clientid);
+		// free(e->origin_clientid);
 		free(e->backend_name);
 		e->username = strdup(username);
-		e->clientid = strdup("client id not available");
-		e->origin_clientid = id ? strdup(id) : NULL;
+		e->clientid = id ? strdup(id) : NULL;
+		// e->clientid = strdup("client id not available");
+		// e->origin_clientid = id ? strdup(id) : NULL;
 		e->backend_name = NULL;
 	} else {
 		e = (struct cliententry *)malloc(sizeof(struct cliententry));
 		e->key = (void *)client;
 		e->username = strdup(username);
-		e->clientid = strdup("client id not available");
-		e->origin_clientid = id ? strdup(id) : NULL;
+		e->clientid = id ? strdup(id) : NULL;
+		// e->clientid = strdup("client id not available");
+		// e->origin_clientid = id ? strdup(id) : NULL;
 		e->backend_name = NULL;
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
@@ -667,7 +681,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	struct cliententry *e;
 	const char *clientid = NULL;
 	const char *username = NULL;
-	const char *origin_clientid = NULL;
+	// const char *origin_clientid = NULL;
 	// const char *auth_backend = NULL;
 	bool client_cert_auth = false;
 	const char *topic = msg->topic;
@@ -675,7 +689,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	if (e) {
 		clientid = e->clientid;
 		username = e->username;
-		origin_clientid = e->origin_clientid;
+		// origin_clientid = e->origin_clientid;
 		auth_backend = e->backend_name;
 	} else {
 		bool client_cert = (mosquitto_client_certificate(client) != NULL);
@@ -708,22 +722,24 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 * id to bypass ACL checks (or have a username/client id that cannot
 	 * publish or receive messages to its own place in the hierarchy).
 	 */
-	if(username && strpbrk(username, "+#/")){
-		_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous username \"%s\"", username);
-		return MOSQ_DENY_ACL;
+	if (ud->acl_deny_special_chars) {
+		if(username && strpbrk(username, "+#/")){
+			_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous username \"%s\"", username);
+			return MOSQ_DENY_ACL;
+		}
+
+		if(clientid && strpbrk(clientid, "+#/")){
+			_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous client id \"%s\"", clientid);
+			return MOSQ_DENY_ACL;
+		}
 	}
 
-	if(clientid && strpbrk(clientid, "+#/")){
-		_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous client id \"%s\"", clientid);
-		return MOSQ_DENY_ACL;
-	}
-
-	_log(LOG_DEBUG, "mosquitto_auth_acl_check(..., %s, %s, %s, %s, %s)",
+	_log(LOG_DEBUG, "mosquitto_auth_acl_check(..., %s, %s, %s, %s)",
 		clientid ? clientid : "NULL",
 		username ? username : "NULL",
 		topic ? topic : "NULL",
-		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE",
-		origin_clientid ? origin_clientid : "NULL");
+		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE");
+		// origin_clientid ? origin_clientid : "NULL");
 
 	// !client_cert_auth && auth_backend == NULL ???
 

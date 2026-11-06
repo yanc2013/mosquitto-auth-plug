@@ -37,8 +37,8 @@
 struct cliententry {
 	void *key;
 	char *username;
-	char *clientid;
-	char *origin_clientid;  /* Actual MQTT Client ID */
+	char *clientid;         /* Actual MQTT Client ID */
+	// char *origin_clientid;  /* Actual MQTT Client ID */
 	char *backend_name;     /* Authentication backend */
 	UT_hash_handle hh;
 };
@@ -55,6 +55,8 @@ struct userdata {
 	time_t auth_cachejitter;		/* number of seconds to add/remove to cache AUTH lookups TTL */
 	struct cacheentry *authcache;
 	struct cliententry *clients;
+	// int log_quiet;
+	int acl_deny_special_chars; /* Enable checking username and client ID for special characters (+, #, /). Default: 1 (1: enabled, 0: disabled) */
 };
 
 #endif
