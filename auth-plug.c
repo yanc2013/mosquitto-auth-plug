@@ -654,6 +654,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	const char *username = NULL;
 	const char *origin_clientid = NULL;
 	const char *auth_backend = NULL;
+	bool client_cert_auth = false;
 	const char *topic = msg->topic;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	if (e) {
@@ -667,6 +668,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		if (client_cert == true) {
 			clientid = mosquitto_client_id(client);
 			username = mosquitto_client_username(client);
+
+			/* Certificate-authenticated clients may bypass unpwd_check().
+			* No authentication backend is recorded, so use the original
+			* ACL behavior and check all configured backends.
+			*/
+			client_cert_auth = true;
 		}
 
 		if (client_cert == false || clientid == NULL || username == NULL) {
@@ -753,20 +760,24 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 * Check authorization in the back-end used to authenticate the user.
 	 */
 
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	/* Authentication backend must be available */
-	if (auth_backend == NULL) {
+	if (!client_cert_auth && auth_backend == NULL) {
 		_log(LOG_NOTICE, "aclcheck(%s): authentication backend not available", username ? username : "NULL");
 		granted = MOSQ_DENY_ACL;
 		goto outout;
 	}
+#endif
 
 	for (bep = ud->be_list; bep && *bep; bep++) {
 		struct backend_p *b = *bep;
 
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		/* Only check the backend that authenticated this client */
-		if (strcmp(auth_backend, b->name) != 0) {
+		if (!client_cert_auth && strcmp(auth_backend, b->name) != 0) {
 			continue;
 		}
+#endif
 
 		match = b->aclcheck((*bep)->conf, clientid, username, topic, access);
 		if (match == BACKEND_ALLOW) {
