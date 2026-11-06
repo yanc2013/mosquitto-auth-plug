@@ -181,7 +181,7 @@ static int http_post(void *handle, char *uri, const char *clientid, const char *
 		escaped_password,
 		escaped_topic,
 		string_acc,
-		clientid);
+		escaped_clientid);
 
 	_log(LOG_DEBUG, "url=%s", url);
 	_log(LOG_DEBUG, "data=%s", data);
