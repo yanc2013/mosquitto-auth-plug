@@ -724,7 +724,7 @@ topic #
 ```
 The files backend supports read, write, and readwrite ACL permissions. If no permission is specified, readwrite is assumed.
 
-SUBSCRIBE requests are allowed when the user has at least one ACL entry (including global ACL entries). Actual message delivery is controlled by READ permissions, while publishing is controlled by WRITE permissions. A successful SUBSCRIBE does not necessarily mean the client can receive messages on the subscribed topics.
+SUBSCRIBE requests are allowed regardless of whether the user has any ACL entries. Actual message delivery is controlled by READ permissions, while publishing is controlled by WRITE permissions. A successful SUBSCRIBE does not necessarily mean the client can receive messages on the subscribed topics.
 
 The ACL file supports a subset of the syntax described in `mosquitto.conf(5)`, including `user`, `topic`, `pattern`, and `read`, `write`, and `readwrite` permissions. Explicit `deny` rules are not currently supported.
 

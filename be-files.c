@@ -45,11 +45,7 @@
 #include "backends.h"
 #include "be-files.h"
 
-// #if (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
-// #define LOG(lvl, fmt, ...) mosquitto_log_printf(lvl, fmt, ##__VA_ARGS__)
-// #else
-// #define LOG(lvl, fmt, ...) _log(lvl, fmt, ##__VA_ARGS__)
-// #endif
+
 
 typedef struct dllist_entry {
 	struct dllist_entry *next;
@@ -399,15 +395,6 @@ static int do_aclcheck(dllist * acl_list,
 		}
 		*di = '\0';
 
-		/* SUBSCRIBE: allow the subscription filter.
-		 * Actual message delivery is controlled by READ ACL.
-		 */
-		if (access == MOSQ_ACL_SUBSCRIBE) {
-			/* Allow subscription; actual message delivery is checked by READ ACL. */
-			_log(LOG_DEBUG, "aclcheck(%s, %s, SUBSCRIBE) ALLOWED by files (READ ACL enforced on delivery)", username, topic);
-			return BACKEND_ALLOW;
-		}
-
 		/* READ / WRITE: topic is an actual topic name. */
 		if (mosquitto_topic_matches_sub(buf, topic, &ret) != MOSQ_ERR_SUCCESS) {
 			_log(MOSQ_LOG_ERR, "invalid topic '%s'", buf);
@@ -430,6 +417,15 @@ int be_files_aclcheck(void *handle,
 
 	if (!conf->acl_checks)
 		return BACKEND_ALLOW;
+
+	/* SUBSCRIBE: allow the subscription filter.
+	 * Actual message delivery is controlled by READ ACL.
+     */
+	if (access == MOSQ_ACL_SUBSCRIBE) {
+		/* Allow subscription; actual message delivery is checked by READ ACL. */
+		_log(LOG_DEBUG, "aclcheck(%s, %s, SUBSCRIBE) ALLOWED by files (READ ACL enforced on delivery)", username, topic);
+		return BACKEND_ALLOW;
+	}
 
 	if (pwd != NULL) {
 		ret = do_aclcheck(&pwd->acl_entries, clientid, username, topic, access);
