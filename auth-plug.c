@@ -731,13 +731,15 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		clientid ? clientid : "NULL",
 		username ? username : "NULL",
 		topic ? topic : "NULL",
-		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE");
+		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" :
+		access == MOSQ_ACL_WRITE ? "MOSQ_ACL_WRITE" :
+		access == MOSQ_ACL_SUBSCRIBE ? "MOSQ_ACL_SUBSCRIBE" : "MOSQ_ACL_UNKNOWN");
 
 	// !client_cert_auth && auth_backend == NULL ???
 	granted = acl_cache_q(clientid, username, topic, access, userdata, auth_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
-		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d by backend %s",
-			username, topic, access, granted, auth_backend ? auth_backend : "none");
+		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d[%s] by backend %s",
+			username, topic, access, granted, granted == MOSQ_ERR_SUCCESS ? "ALLOW" : "DEFER", auth_backend ? auth_backend : "none"); 
 		return (granted);
 	}
 
@@ -822,8 +824,8 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		}
 	}
 
-	_log(LOG_DEBUG, "aclcheck(%s, %s, %d) AUTHORIZED=%d by %s",
-		username, topic, access, authorized, (backend_name) ? backend_name : "none");
+	_log(LOG_DEBUG, "aclcheck(%s, %s, %d) AUTHORIZED=%d[%s] by %s",
+		username, topic, access, authorized, authorized ? "ALLOW" : "NOT ALLOWED(MOSQ_DENY_ACL)", (backend_name) ? backend_name : "none"); 
 
 	granted = (authorized) ?  MOSQ_ERR_SUCCESS : MOSQ_DENY_ACL;
 
