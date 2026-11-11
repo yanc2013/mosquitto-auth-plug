@@ -141,7 +141,9 @@ LDFLAGS += $(BE_LDFLAGS) -L$(MOSQUITTO_SRC)/lib/
 # LDFLAGS += -export-dynamic
 LDADD = $(BE_LDADD) $(OSSLIBS) -lmosquitto
 
-all: printconfig $(BUILD_DIR) $(BUILD_DIR)/auth-plug.so $(BUILD_DIR)/np
+.PHONY: all printconfig tests clean
+
+all: printconfig $(BUILD_DIR) $(BUILD_DIR)/auth-plug.so $(BUILD_DIR)/np tests
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -191,6 +193,9 @@ $(BUILD_DIR)/be-files.o: be-files.c be-files.h Makefile
 
 $(BUILD_DIR)/np: np.c base64.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@ $(OSSLIBS)
+
+tests:
+	$(MAKE) -C tests
 
 $(CDBLIB):
 	(cd $(CDBDIR); make libcdb.a cdb )

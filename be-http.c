@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2013 Jan-Piet Mens <jp@mens.de> wendal <wendal1985()gmai.com>
+ * Copyright (c) 2026 Mikro Y <yc_8301jp@yahoo.co.jp>
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

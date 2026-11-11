@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2017, Diehl Connectivity Solutions GmbH. All rights
- * reserved.
+ * Copyright (c) 2017, Diehl Connectivity Solutions GmbH. 
+ * Copyright (c) 2026 Mikro Y <yc_8301jp@yahoo.co.jp>
+ * 
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are

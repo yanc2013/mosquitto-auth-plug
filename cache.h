@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2014 Jan-Piet Mens <jp@mens.de>
+ * Copyright (c) 2026 Mikro Y <yc_8301jp@yahoo.co.jp>
+ *
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without

@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2013, 2014 Jan-Piet Mens <jp@mens.de>
+ * Copyright (c) 2026 Mikro Y <yc_8301jp@yahoo.co.jp>
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -96,7 +98,8 @@ struct backend_p {
 	f_aclcheck *aclcheck;
 };
 
-int pbkdf2_check(char *password, char *hash);
+// int pbkdf2_check(char *password, char *hash);
+int password_check(const char *password, char *hash);
 static int log_configure(void);
 
 int mosquitto_auth_plugin_version(void)
@@ -624,7 +627,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		} else if (rc == BACKEND_ERROR) {
 			has_error = TRUE;
 		} else if (phash != NULL) {
-			match = pbkdf2_check((char *)password, phash);
+			// match = pbkdf2_check((char *)password, phash);
+			match = password_check((char *)password, phash);
 			if (match == 1) {
 				backend_name = (*bep)->name;
 				authenticated = TRUE;

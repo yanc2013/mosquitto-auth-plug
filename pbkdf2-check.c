@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2013 Jan-Piet Mens <jp@mens.de>
+ * Copyright (c) 2026 Mikro Y <yc_8301jp@yahoo.co.jp>
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -192,7 +194,213 @@ int pbkdf2_check(char *password, char *hash)
 	return match;
 }
 
+#include <errno.h>
+#define MOSQ_SALT_LEN 12
+#define MOSQ_HASH_LEN 64
+
+/*
+ * Verify a Mosquitto password hash ($7$ format).
+ * Returns 1 on success, 0 on failure.
+ */
+int mosquitto_pw_check(const char *password, char *hash)
+{
+    char *endptr;
+    long iterations;
+    const char *salt_start;
+    const char *hash_start;
+    const char *sep;
+
+    char salt_b64[17];
+    char hash_b64[89];
+
+    unsigned char salt[MOSQ_SALT_LEN];
+    unsigned char expected[MOSQ_HASH_LEN];
+    unsigned char actual[MOSQ_HASH_LEN];
+
+    int len;
+
+    if (!password || !hash)
+        return 0;
+
+    /* Only support Mosquitto PBKDF2-SHA512 ($7$). */
+    if (strncmp(hash, "$7$", 3) != 0)
+        return 0;
+
+    /* Parse iteration count. */
+    errno = 0;
+    iterations = strtol(hash + 3, &endptr, 10);
+
+    if (errno == ERANGE ||
+        endptr == hash + 3 ||
+        *endptr != '$' ||
+        iterations < 1 ||
+        iterations > INT_MAX)
+        return 0;
+
+    /* Extract Base64 salt. */
+    salt_start = endptr + 1;
+    sep = strchr(salt_start, '$');
+
+    if (!sep || sep - salt_start != 16)
+        return 0;
+
+    memcpy(salt_b64, salt_start, 16);
+    salt_b64[16] = '\0';
+
+    /* Extract Base64 password hash. */
+    hash_start = sep + 1;
+
+    if (strlen(hash_start) != 88)
+        return 0;
+
+    memcpy(hash_b64, hash_start, 89);
+
+    /* Decode salt: 16 Base64 chars -> 12 bytes. */
+    len = EVP_DecodeBlock(
+        salt,
+        (const unsigned char *)salt_b64,
+        16
+    );
+
+    if (len != MOSQ_SALT_LEN)
+        return 0;
+
+    /* Decode hash: 88 Base64 chars -> 64 bytes. */
+    if (hash_b64[86] != '=' || hash_b64[87] != '=')
+        return 0;
+
+    len = EVP_DecodeBlock(
+        expected,
+        (const unsigned char *)hash_b64,
+        88
+    );
+
+    if (len != 66)
+        return 0;
+
+    /* EVP_DecodeBlock includes padding in the length. */
+    len -= 2;
+
+    if (len != MOSQ_HASH_LEN)
+        return 0;
+
+    /* Calculate PBKDF2-HMAC-SHA512. */
+    if (PKCS5_PBKDF2_HMAC(
+            password,
+            -1,
+            salt,
+            MOSQ_SALT_LEN,
+            (int)iterations,
+            EVP_sha512(),
+            MOSQ_HASH_LEN,
+            actual) != 1)
+        return 0;
+
+    /* Constant-time comparison. */
+    return CRYPTO_memcmp(actual, expected, MOSQ_HASH_LEN) == 0;
+}
+
+/*
+ * Verify Mosquitto legacy SHA512 password hash ($6$).
+ * Returns 1 on success, 0 on failure.
+ */
+int mosquitto_sha512_check(const char *password, char *hash)
+{
+    const char *salt_start;
+    const char *hash_start;
+    const char *sep;
+
+    unsigned char salt[12];
+    unsigned char expected[66];
+    unsigned char actual[EVP_MAX_MD_SIZE];
+
+    unsigned int actual_len = 0;
+    int len;
+    EVP_MD_CTX *ctx = NULL;
+    int match = 0;
+
+    if (!password || !hash || strncmp(hash, "$6$", 3) != 0)
+        return 0;
+
+    salt_start = hash + 3;
+    sep = strchr(salt_start, '$');
+
+    /* 12 bytes salt = 16 Base64 characters. */
+    if (!sep || sep - salt_start != 16)
+        return 0;
+
+    hash_start = sep + 1;
+
+    /* 64 bytes SHA512 = 88 Base64 characters. */
+    if (strlen(hash_start) != 88)
+        return 0;
+
+    if (hash_start[86] != '=' || hash_start[87] != '=')
+        return 0;
+
+    len = EVP_DecodeBlock(
+        salt,
+        (const unsigned char *)salt_start,
+        16
+    );
+
+    if (len != 12)
+        return 0;
+
+    len = EVP_DecodeBlock(
+        expected,
+        (const unsigned char *)hash_start,
+        88
+    );
+
+    if (len != 66)
+        return 0;
+
+    ctx = EVP_MD_CTX_new();
+    if (!ctx)
+        return 0;
+
+    if (EVP_DigestInit_ex(ctx, EVP_sha512(), NULL) != 1)
+        goto cleanup;
+
+    if (EVP_DigestUpdate(ctx, password, strlen(password)) != 1)
+        goto cleanup;
+
+    if (EVP_DigestUpdate(ctx, salt, sizeof(salt)) != 1)
+        goto cleanup;
+
+    if (EVP_DigestFinal_ex(ctx, actual, &actual_len) != 1)
+        goto cleanup;
+
+    if (actual_len == 64 &&
+        CRYPTO_memcmp(actual, expected, 64) == 0) {
+        match = 1;
+    }
+
+cleanup:
+    EVP_MD_CTX_free(ctx);
+    return match;
+}
+
+int password_check(const char *password, char *hash)
+{
+    if (!password || !hash)
+        return 0;
+
+    if (strncmp(hash, "$7$", 3) == 0)
+        return mosquitto_pw_check(password, hash);
+
+    if (strncmp(hash, "$6$", 3) == 0)
+        return mosquitto_sha512_check(password, hash);
+
+    return pbkdf2_check((char *)password, hash);
+}
+// match = password_check(password, phash);
+
+
+
 #if TEST
+// gcc -DTEST=1 -o pbkdf2-test pbkdf2-check.c base64.c -lcrypto
 int main()
 {
 	char password[] = "password";
