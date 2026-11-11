@@ -796,6 +796,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		struct backend_p *b = *bep;
 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
+		// _log(LOG_DEBUG, "ACL backend: auth=%s, current=%s", auth_backend ? auth_backend : "NULL", b->name);
 		/* Only check the backend that authenticated this client */
 		if (!client_cert_auth && strcmp(auth_backend, b->name) != 0) {
 			continue;
@@ -803,6 +804,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 #endif
 
 		match = b->aclcheck((*bep)->conf, clientid, username, topic, access);
+		// _log(LOG_DEBUG, "ACL backend result: %s, match=%d", b->name, match);
 		if (match == BACKEND_ALLOW) {
 			backend_name = b->name;
 			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) trying to acl with %s",

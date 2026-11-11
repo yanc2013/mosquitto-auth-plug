@@ -45,11 +45,11 @@
 #include "backends.h"
 #include "be-files.h"
 
-#if (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
-#define LOG(lvl, fmt, ...) mosquitto_log_printf(lvl, fmt, ##__VA_ARGS__)
-#else
-#define LOG(lvl, fmt, ...) _log(lvl, fmt, ##__VA_ARGS__)
-#endif
+// #if (LIBMOSQUITTO_MAJOR > 1) || ((LIBMOSQUITTO_MAJOR == 1) && (LIBMOSQUITTO_MINOR >= 4))
+// #define LOG(lvl, fmt, ...) mosquitto_log_printf(lvl, fmt, ##__VA_ARGS__)
+// #else
+// #define LOG(lvl, fmt, ...) _log(lvl, fmt, ##__VA_ARGS__)
+// #endif
 
 typedef struct dllist_entry {
 	struct dllist_entry *next;
@@ -191,7 +191,12 @@ static acl_entry *read_acl_line(const char *line)
 	size_t len;
 	int access;
 
-	if (strncmp("read", line, 4) == 0 && (line[4] == ' ' || line[4] == '\t')) {
+	if (strncmp("readwrite", line, 9) == 0 && (line[9] == ' ' || line[9] == '\t')) {
+		access = MOSQ_ACL_READ | MOSQ_ACL_WRITE;
+		pos = &line[10];
+		while (*pos == ' ' || *pos == '\t')
+			++pos;
+	} else if (strncmp("read", line, 4) == 0 && (line[4] == ' ' || line[4] == '\t')) {
 		access = MOSQ_ACL_READ;
 		pos = &line[5];
 		for (; (*pos == ' ' || *pos == '\t') && *pos != '\0'; ++pos);
@@ -261,7 +266,7 @@ static bool read_acl(be_files * conf, FILE * file)
 			entry = read_acl_line(pos);
 			dllist_push_back(&acl_entries, &entry->entry);
 		} else {
-			LOG(MOSQ_LOG_WARNING, "failed to parse line: %s", line);
+			_log(MOSQ_LOG_WARNING, "failed to parse line: %s", line);
 		}
 	}
 	return true;
@@ -279,7 +284,7 @@ void *be_files_init()
 	path = p_stab("password_file");
 	file = (path == NULL) ? NULL : fopen(path, "r");
 	if (path != NULL && file == NULL) {
-		LOG(MOSQ_LOG_ERR, "failed to open password file: %s", path);
+		_log(MOSQ_LOG_ERR, "failed to open password file: %s", path);
 		be_files_destroy(conf);
 		return NULL;
 	}
@@ -291,7 +296,7 @@ void *be_files_init()
 	conf->acl_checks = path != NULL;
 	file = (path == NULL) ? NULL : fopen(path, "r");
 	if (path != NULL && file == NULL) {
-		LOG(MOSQ_LOG_ERR, "failed to open ACL file: %s", path);
+		_log(MOSQ_LOG_ERR, "failed to open ACL file: %s", path);
 		be_files_destroy(conf);
 		return NULL;
 	}
@@ -393,8 +398,19 @@ static int do_aclcheck(dllist * acl_list,
 			}
 		}
 		*di = '\0';
+
+		/* SUBSCRIBE: allow the subscription filter.
+		 * Actual message delivery is controlled by READ ACL.
+		 */
+		if (access == MOSQ_ACL_SUBSCRIBE) {
+			/* Allow subscription; actual message delivery is checked by READ ACL. */
+			_log(LOG_DEBUG, "aclcheck(%s, %s, SUBSCRIBE) ALLOWED by files (READ ACL enforced on delivery)", username, topic);
+			return BACKEND_ALLOW;
+		}
+
+		/* READ / WRITE: topic is an actual topic name. */
 		if (mosquitto_topic_matches_sub(buf, topic, &ret) != MOSQ_ERR_SUCCESS) {
-			LOG(MOSQ_LOG_ERR, "invalid topic '%s'", buf);
+			_log(MOSQ_LOG_ERR, "invalid topic '%s'", buf);
 		} else if (ret && (access & acl->access) != 0) {
 			return BACKEND_ALLOW;
 		}
