@@ -98,7 +98,6 @@ struct backend_p {
 	f_aclcheck *aclcheck;
 };
 
-// int pbkdf2_check(char *password, char *hash);
 int password_check(const char *password, char *hash);
 static int log_configure(void);
 
@@ -627,7 +626,6 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		} else if (rc == BACKEND_ERROR) {
 			has_error = TRUE;
 		} else if (phash != NULL) {
-			// match = pbkdf2_check((char *)password, phash);
 			match = password_check((char *)password, phash);
 			if (match == 1) {
 				backend_name = (*bep)->name;
