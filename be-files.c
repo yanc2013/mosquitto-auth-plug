@@ -536,20 +536,39 @@ static int do_aclcheck(dllist * acl_list,
 				switch (*si) {
 				case 'c':
 					++si;
-					for (t = clientid; *t != '\0'; ++di, ++t)
+					for (t = clientid; *t != '\0'; ++di, ++t) {
+						if ((size_t)(di - buf) >= sizeof(buf) - 1) {
+							_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+							return BACKEND_DEFER;
+						}
 						*di = *t;
+					}
 					break;
 				case 'u':
 					++si;
-					for (t = username; *t != '\0'; ++di, ++t)
+					/* Check whether username can be NULL. username == NULL ? */
+					for (t = username; *t != '\0'; ++di, ++t) {
+						if ((size_t)(di - buf) >= sizeof(buf) - 1) {
+							_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+							return BACKEND_DEFER;
+						}
 						*di = *t;
+					}
 					break;
 				default:
+					if ((size_t)(di - buf) >= sizeof(buf) - 1) {
+						_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+						return BACKEND_DEFER;
+					}
 					*di++ = *si;
 					break;
 				}
 				break;
 			default:
+				if ((size_t)(di - buf) >= sizeof(buf) - 1) {
+					_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+					return BACKEND_DEFER;
+				}
 				*di++ = *si++;
 				break;
 			}
