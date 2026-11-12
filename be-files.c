@@ -111,25 +111,89 @@ static inline bool dllist_empty(const dllist * thiz)
        (iter) = dllist_entry_element((iter)->member.next, typeof(*(iter)), member))
 
 typedef struct acl_entry {
+	/* Link(ACL) node in a user's or global ACL list. */
 	dllist_entry entry;
 	int access;
 	char *topic;
 } acl_entry;
 
 typedef struct pwd_entry {
+	/* Link(Users) node in be_files.passwords list. */
 	dllist_entry entry;
 	char *username;
 	char *password;
+	/* List(acl_entry) of ACL objects for this user. */
 	dllist acl_entries;
 } pwd_entry;
 
 typedef struct be_files {
+	/* List of pwd_entry objects. */
 	dllist passwords;
 	bool acl_checks;
 } be_files;
 
 
 static dllist acl_entries = {{&acl_entries.head, &acl_entries.head}};
+
+/*
+ * ACL and password data structures.
+ *
+ * Example ACL file:
+ *
+ *   user alice
+ *   topic readwrite /alice/#
+ *   topic read /public/#
+ *   topic write /server/command
+ *
+ *   user bob
+ *   topic read /bob/#
+ *
+ *   pattern read /shared/#
+ *
+ * Memory structure:
+ *
+ * be_files *conf
+ *   |
+ *   +-- passwords
+ *         |
+ *         +-- pwd_entry (alice)
+ *         |     |
+ *         |     +-- username = "alice"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries
+ *         |           |
+ *         |           +-- acl_entry
+ *         |           |     access = READ | WRITE
+ *         |           |     topic = "/alice/#"
+ *         |           |
+ *         |           +-- acl_entry
+ *         |           |     access = READ
+ *         |           |     topic = "/public/#"
+ *         |           |
+ *         |           +-- acl_entry
+ *         |                 access = WRITE
+ *         |                 topic = "/server/command"
+ *         |
+ *         +-- pwd_entry (bob)
+ *         |     |
+ *         |     +-- username = "bob"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries
+ *         |           |
+ *         |           +-- acl_entry
+ *         |                 access = READ
+ *         |                 topic = "/bob/#"
+ *
+ * static dllist acl_entries
+ *   |
+ *   +-- acl_entry
+ *         access = READ
+ *         topic = "/shared/#"
+ *
+ * Each user can have multiple ACL entries.
+ * Pattern ACL entries are shared by all users.
+ */
+
 
 static pwd_entry *find_pwd(be_files * conf, const char *username)
 {
@@ -142,6 +206,27 @@ static pwd_entry *find_pwd(be_files * conf, const char *username)
 	return NULL;
 }
 
+/*
+ * Parse the password file and create pwd_entry objects.
+ *
+ * be_files *conf
+ *   |
+ *   +-- passwords
+ *         |
+ *         +-- pwd_entry (alice)
+ *         |     |
+ *         |     +-- username = "alice"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries = empty list
+ *         |
+ *         +-- pwd_entry (bob)
+ *         |     |
+ *         |     +-- username = "bob"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries = empty list
+ *
+ * ACL entries are added later by read_acl().
+ */
 static bool read_passwords(be_files * conf, FILE * file)
 {
 	char line[512];
@@ -216,8 +301,48 @@ static acl_entry *read_acl_line(const char *line)
 
 /*
  * (user)[ \t]+([^ \t]+) (topic|pattern)[ \t]+(read|write)?[ \t][^ \t]+
+ *
+ * Parse the ACL file and populate user-specific and global ACL lists.
+ *
+ * be_files *conf
+ *   |
+ *   +-- passwords
+ *         |
+ *         +-- pwd_entry (alice)
+ *         |     |
+ *         |     +-- username = "alice"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries
+ *         |           |
+ *         |           +-- acl_entry
+ *         |           |     access = READ | WRITE
+ *         |           |     topic = "/alice/#"
+ *         |           +-- acl_entry
+ *         |                 ...
+ *         |                 ...
+ *         |
+ *         +-- pwd_entry (bob)
+ *         |     |
+ *         |     +-- username = "bob"
+ *         |     +-- password = "$7$..."
+ *         |     +-- acl_entries
+ *         |           |....
+ *
+ * static dllist acl_entries
+ *   |
+ *   +-- acl_entry
+ *         access = READ
+ *         topic = "/public/#"
+ *
+ * Notes:
+ *   - Each user can have multiple ACL entries.
+ *   - "topic" rules are added to the current user's ACL list.
+ *   - "pattern" rules are added to the global ACL list.
+ *   - A "topic" rule without a preceding "user" is also added
+ *     to the global ACL list in this implementation.
+ *   - If a user is not found, a new pwd_entry is created with
+ *     password = NULL.
  */
-
 static bool read_acl(be_files * conf, FILE * file)
 {
 	char line[512];
@@ -268,6 +393,27 @@ static bool read_acl(be_files * conf, FILE * file)
 	return true;
 }
 
+/*
+ * be_files_init()
+ *   |
+ *   +-- Initialize be_files
+ *   |      |
+ *   |      +-- Initialize passwords list
+ *   |      +-- Initialize acl_checks
+ *   |
+ *   +-- read_passwords()
+ *   |      |
+ *   |      +-- Create pwd_entry
+ *   |      +-- Initialize empty ACL lists
+ *   |
+ *   +-- read_acl()
+ *          |
+ *          +-- Find or create pwd_entry
+ *          +-- Add acl_entry to user's ACL list
+ *          +-- Add acl_entry to global ACL list
+ *   |
+ *   +-- Return be_files *conf
+ */
 void *be_files_init()
 {
 	const char *path;
@@ -277,6 +423,7 @@ void *be_files_init()
 	dllist_init(&conf->passwords);
 	conf->acl_checks = false;
 
+	/* Read password file. */
 	path = p_stab("password_file");
 	file = (path == NULL) ? NULL : fopen(path, "r");
 	if (path != NULL && file == NULL) {
@@ -288,6 +435,8 @@ void *be_files_init()
 		read_passwords(conf, file);
 		fclose(file);
 	}
+
+	/* Read ACL file. */
 	path = p_stab("acl_file");
 	conf->acl_checks = path != NULL;
 	file = (path == NULL) ? NULL : fopen(path, "r");
@@ -300,6 +449,7 @@ void *be_files_init()
 		read_acl(conf, file);
 		fclose(file);
 	}
+
 	return conf;
 }
 
@@ -368,6 +518,15 @@ static int do_aclcheck(dllist * acl_list,
 	char *di;
 
 	dllist_for_each_element(acl_list, acl, entry) {
+		/*
+		* Expand %u and %c in ACL topic patterns.
+		*
+		* Example:
+		*   pattern readwrite /users/%u/device/%c/#
+		*   username = "alice"
+		*   clientid = "device001"
+		*   expanded = /users/alice/device/device001/#
+		*/
 		for (si = acl->topic, di = buf; *si != '\0';) {
 			switch (*si) {
 			case '%':
