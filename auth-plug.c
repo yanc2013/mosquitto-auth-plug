@@ -100,11 +100,20 @@ struct backend_p {
 
 int password_check(const char *password, char *hash);
 static int log_configure(void);
+static void aclcache_remove(struct userdata *ud, struct cacheentry *a);
+static void authcache_remove(struct userdata *ud, struct cacheentry *a);
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+static void cliententry_remove(struct userdata *ud, struct cliententry *e);
+#endif
+static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source);
+
 
 int mosquitto_auth_plugin_version(void)
 {
 	log_init();
 	_log(LOG_NOTICE, "*** auth-plug: startup, auth plugin API version: %d", MOSQ_AUTH_PLUGIN_VERSION);
+
+	/* The generic plugin interface starts at version 5 (MOSQ_PLUGIN_VERSION) */
 
 	// mosquitto 2.0.11 auth plugin API version: 4
 	return MOSQ_AUTH_PLUGIN_VERSION;
@@ -484,9 +493,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 		struct cacheentry *a, *tmp;
 
 		HASH_ITER(hh, ud->aclcache, a, tmp) {
-			HASH_DEL(ud->aclcache, a);
-			free(a->backend_name);
-			free(a);
+			aclcache_remove(ud, a);
 		}
 	}
 
@@ -494,9 +501,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 		struct cacheentry *a, *tmp;
 
 		HASH_ITER(hh, ud->authcache, a, tmp) {
-			HASH_DEL(ud->authcache, a);
-			free(a->backend_name);
-			free(a);
+			authcache_remove(ud, a);
 		}
 	}
 
@@ -504,11 +509,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 	if (ud->clients != NULL) {
 		struct cliententry *e, *tmp;
 		HASH_ITER(hh, ud->clients, e, tmp) {
-			HASH_DEL(ud->clients, e);
-			free(e->username);
-			free(e->clientid);
-			free(e->backend_name);
-			free(e);
+			cliententry_remove(ud, e);
 		}
 	}
 #endif
@@ -551,16 +552,19 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	char *phash = NULL, *backend_name = NULL;
 	int match, authenticated = FALSE, nord, granted, rc, has_error = FALSE;
 	const char *cached_backend = NULL;
+	unsigned int tracked = 0;
+#if MOSQ_AUTH_PLUGIN_VERSION < 3
+	struct mosquitto *client = NULL;
+#endif
 
 	if (!username || !*username || !password || !*password)
 		return MOSQ_DENY_AUTH;
-
-	_log(LOG_DEBUG, "mosquitto_auth_unpwd_check(%s)", (username) ? username : "<nil>");
 
 #if MOSQ_AUTH_PLUGIN_VERSION >=3
 	struct cliententry *e;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	const char *id = mosquitto_client_id(client);
+	tracked = HASH_COUNT(ud->clients);
 	if (e) {
 		free(e->username);
 		free(e->clientid);
@@ -578,6 +582,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	}
 #endif
 
+	_log(LOG_DEBUG, "mosquitto_auth_unpwd_check(%s) Tracked clients: %u", (username) ? username : "<nil>", tracked);
+
 	granted = auth_cache_q(username, password, userdata, &cached_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
 		_log(LOG_DEBUG, "getuser(%s) CACHEDAUTH: %d",
@@ -592,6 +598,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 			}
 		}
 #endif
+
+		auth_failure_log(ud, client, username, granted, "cache");
 
 		return granted;
 	}
@@ -658,6 +666,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		granted = MOSQ_ERR_UNKNOWN;
 	}
 	auth_cache(username, password, granted, userdata, backend_name);
+
+	auth_failure_log(ud, client, username, granted, "backend");
+
 	return granted;
 }
 
@@ -922,4 +933,69 @@ static int log_configure(void)
 	}
 
 	return 0;
+}
+
+static void aclcache_remove(struct userdata *ud, struct cacheentry *a)
+{
+	if (a == NULL)
+		return;
+
+	HASH_DEL(ud->aclcache, a);
+	free(a->backend_name);
+	free(a);
+}
+
+static void authcache_remove(struct userdata *ud, struct cacheentry *a)
+{
+	if (a == NULL)
+		return;
+
+	HASH_DEL(ud->authcache, a);
+	free(a->backend_name);
+	free(a);
+}
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+static void cliententry_remove(struct userdata *ud, struct cliententry *e)
+{
+	if (e == NULL)
+		return;
+
+	HASH_DEL(ud->clients, e);
+	free(e->username);
+	free(e->clientid);
+	free(e->backend_name);
+	free(e);
+}
+#endif
+
+// static void find_cliententry_remove(struct userdata *ud, struct mosquitto *client)
+// {
+// 	struct cliententry *e;
+// 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
+// 	cliententry_remove(ud, e);
+// }
+
+static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source)
+{
+	if (granted == MOSQ_ERR_SUCCESS)
+		return;
+
+	unsigned int tracked = 0;
+	const char *clientid = NULL;
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+	clientid = client ? mosquitto_client_id(client) : NULL;
+	tracked = HASH_COUNT(ud->clients);
+#endif
+
+	_log(LOG_DEBUG,
+		"AUTH FAILED (%s): username=%s, clientid=%s, result=%d, tracked=%u",
+		source,
+		username ? username : "NULL",
+		clientid ? clientid : "NULL",
+		granted,
+		tracked);
+
+	/* granted != MOSQ_ERR_SUCCESS cliententry_remove(ud, client); */
 }
