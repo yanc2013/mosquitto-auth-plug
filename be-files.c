@@ -94,6 +94,7 @@ static inline bool dllist_empty(const dllist * thiz)
 	return (thiz->head.next == &thiz->head);
 }
 
+/* intrusive doubly linked circular list (container_of) */
 #if !(defined(offsetof))
 #if defined(__GNUC__) && __GNUC__ >= 4
 #define offsetof(type, member) __builtin_offsetof(type, member)
@@ -102,8 +103,9 @@ static inline bool dllist_empty(const dllist * thiz)
 #endif
 #endif
 
+/* Recover the containing structure from an embedded list node. */
 #define dllist_entry_element(ptr, type, member) \
-   (type*)((char*)(void*)ptr + offsetof(type, member))
+   (type*)((char*)(void*)ptr - offsetof(type, member))
 
 #define dllist_for_each_element(thiz, iter, member) \
    for((iter) = dllist_entry_element((thiz)->head.next, typeof(*(iter)), member); \
