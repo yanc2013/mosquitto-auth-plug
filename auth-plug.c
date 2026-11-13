@@ -71,6 +71,8 @@
 
 #include "userdata.h"
 #include "cache.h"
+#include "client-gc.h"
+
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -106,6 +108,10 @@ static void authcache_remove(struct userdata *ud, struct cacheentry *a);
 static void cliententry_remove(struct userdata *ud, struct cliententry *e);
 #endif
 static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source);
+static void gc_configure(struct userdata *ud);
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+static void client_gc_touch_if_success(struct cliententry *e, int granted);
+#endif
 
 
 int mosquitto_auth_plugin_version(void)
@@ -478,6 +484,15 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 
 	free(_p);
 
+	/*
+	* Set up MQTT Client GC manager
+	* auth_opt_client_gc_enabled true
+	* auth_opt_client_gc_interval 60
+	* auth_opt_client_gc_idle_timeout 1800
+	* auth_opt_client_gc_max_lifetime 0
+	*/
+	gc_configure(ud);
+
 	return (ret);
 }
 
@@ -525,6 +540,8 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 		free(ud->be_list);
 	}
 
+	/* free MQTT Client GC manager */
+	free(ud->gc_mgr);
 	free(ud);
 
 	return MOSQ_ERR_SUCCESS;
@@ -561,6 +578,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		return MOSQ_DENY_AUTH;
 
 #if MOSQ_AUTH_PLUGIN_VERSION >=3
+	/* Execute client garbage collection */
+	client_gc_tick(ud);
+
 	struct cliententry *e;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	const char *id = mosquitto_client_id(client);
@@ -578,6 +598,19 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		e->username = strdup(username);
 		e->clientid = id ? strdup(id) : NULL;
 		e->backend_name = NULL;
+		e->gc = NULL;
+
+		/* Create client garbage collection */
+		if (ud->gc_mgr && ud->gc_mgr->enabled) {
+			e->gc = calloc(1, sizeof(struct client_gc));
+			if (e->gc) {
+				e->gc->created_at = time(NULL);
+				e->gc->last_seen = e->gc->created_at;
+				e->gc->state_changed_at = e->gc->created_at;
+				e->gc->state = GC_ACTIVE;
+			}
+		}
+
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
 #endif
@@ -597,6 +630,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 				e->backend_name = strdup(cached_backend);
 			}
 		}
+
+		/* Update client activity after a successful authentication or ACL check */
+		client_gc_touch_if_success(e, granted);
 #endif
 
 		auth_failure_log(ud, client, username, granted, "cache");
@@ -665,6 +701,12 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 			username);
 		granted = MOSQ_ERR_UNKNOWN;
 	}
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+	/* Update client activity after a successful authentication or ACL check */
+	client_gc_touch_if_success(e, granted);
+#endif
+
 	auth_cache(username, password, granted, userdata, backend_name);
 
 	auth_failure_log(ud, client, username, granted, "backend");
@@ -690,6 +732,10 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	const char *username = NULL;
 	bool client_cert_auth = false;
 	const char *topic = msg->topic;
+
+	/* Execute client garbage collection */
+	client_gc_tick(ud);
+
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	if (e) {
 		clientid = e->clientid;
@@ -751,6 +797,10 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	if (granted != MOSQ_ERR_UNKNOWN) {
 		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d[%s] by backend %s",
 			username, topic, access, granted, granted == MOSQ_ERR_SUCCESS ? "ALLOW" : "DEFER", auth_backend ? auth_backend : "none"); 
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+		/* Update client activity after a successful authentication or ACL check */
+		client_gc_touch_if_success(e, granted);
+#endif
 		return (granted);
 	}
 
@@ -849,6 +899,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	}
 
 	acl_cache(clientid, username, topic, access, granted, userdata, auth_backend);
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+	/* Update client activity after a successful authentication or ACL check */
+	client_gc_touch_if_success(e, granted);
+#endif
+
 	return (granted);
 
 }
@@ -965,6 +1021,7 @@ static void cliententry_remove(struct userdata *ud, struct cliententry *e)
 	free(e->username);
 	free(e->clientid);
 	free(e->backend_name);
+	free(e->gc);
 	free(e);
 }
 #endif
@@ -999,3 +1056,37 @@ static void auth_failure_log(struct userdata *ud, struct mosquitto *client, cons
 
 	/* granted != MOSQ_ERR_SUCCESS cliententry_remove(ud, client); */
 }
+
+/* Set up MQTT Client GC manager */
+static void gc_configure(struct userdata *ud)
+{
+	const char *value;
+
+	value = p_stab("client_gc_enabled");
+	bool gc_enabled = value && strcmp(value, "true") == 0;
+
+	value = p_stab("client_gc_interval");
+	unsigned int gc_interval = value ? (unsigned int)strtoul(value, NULL, 10) : 60;
+
+	value = p_stab("client_gc_idle_timeout");
+	unsigned int gc_idle = value ? (unsigned int)strtoul(value, NULL, 10) : 1800;
+
+	value = p_stab("client_gc_max_lifetime");
+	unsigned int gc_lifetime = value ? (unsigned int)strtoul(value, NULL, 10) : 0;
+
+	client_gc_init(ud, gc_enabled, gc_interval, gc_idle, gc_lifetime);
+}
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+/*
+ * Update client activity after a successful authentication or ACL check.
+ *
+ * Refresh the client's last_seen timestamp only when access is granted.
+ * Failed authentication or ACL checks do not update GC activity.
+ */
+static void client_gc_touch_if_success(struct cliententry *e, int granted)
+{
+	if (granted == MOSQ_ERR_SUCCESS && e != NULL && e->gc != NULL)
+		client_gc_touch(e->gc);
+}
+#endif

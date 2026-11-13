@@ -41,6 +41,8 @@ struct cliententry {
 	char *username;
 	char *clientid;         /* Actual MQTT Client ID */
 	char *backend_name;     /* Authentication backend */
+	struct client_gc *gc;   /* MQTT Client GC */
+
 	UT_hash_handle hh;
 };
 
@@ -58,6 +60,7 @@ struct userdata {
 	struct cliententry *clients;
 	// int log_quiet;
 	int acl_deny_special_chars; /* Enable checking username and client ID for special characters (+, #, /). Default: 1 (1: enabled, 0: disabled) */
+	struct client_gc_manager* gc_mgr; /* MQTT Client GC manager */
 };
 
 #endif

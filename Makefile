@@ -7,7 +7,7 @@ BE_LDFLAGS =
 BE_LDADD =
 BE_DEPS =
 BUILD_DIR = build
-OBJS = $(BUILD_DIR)/auth-plug.o $(BUILD_DIR)/base64.o $(BUILD_DIR)/pbkdf2-check.o $(BUILD_DIR)/log.o $(BUILD_DIR)/envs.o $(BUILD_DIR)/hash.o $(BUILD_DIR)/be-psk.o $(BUILD_DIR)/backends.o $(BUILD_DIR)/cache.o
+OBJS = $(BUILD_DIR)/auth-plug.o $(BUILD_DIR)/base64.o $(BUILD_DIR)/pbkdf2-check.o $(BUILD_DIR)/log.o $(BUILD_DIR)/envs.o $(BUILD_DIR)/hash.o $(BUILD_DIR)/be-psk.o $(BUILD_DIR)/backends.o $(BUILD_DIR)/cache.o $(BUILD_DIR)/client-gc.o
 
 BACKENDS =
 BACKENDSTR =
@@ -190,6 +190,7 @@ $(BUILD_DIR)/be-http.o: be-http.c be-http.h Makefile backends.h
 $(BUILD_DIR)/be-jwt.o: be-jwt.c be-jwt.h Makefile backends.h
 $(BUILD_DIR)/be-mongo.o: be-mongo.c be-mongo.h Makefile
 $(BUILD_DIR)/be-files.o: be-files.c be-files.h Makefile
+$(BUILD_DIR)/client-gc.o: client-gc.c client-gc.h Makefile
 
 $(BUILD_DIR)/np: np.c base64.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@ $(OSSLIBS)
