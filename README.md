@@ -171,7 +171,7 @@ Caching is useful when your backend lookup is expensive. Remember that ACL looku
 Jitter is useful to reduce lookup storms that could occur every auth/acl_cacheseconds if lots of clients connect at the same time (for example,
 after a server restart, all your clients may reconnect immediately and each cause ACL lookups every acl_cacheseconds).
 
-**### Client Garbage Collection (GC)**
+### Client Garbage Collection (GC)
 
 This fork adds optional client garbage collection to remove stale client-tracking entries and, when necessary, request that the Mosquitto broker disconnect a client. GC is independent of the authentication and ACL back-end selection.
 

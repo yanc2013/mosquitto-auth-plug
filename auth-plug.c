@@ -101,12 +101,10 @@ struct backend_p {
 };
 
 int password_check(const char *password, char *hash);
+
 static int log_configure(void);
 static void aclcache_remove(struct userdata *ud, struct cacheentry *a);
 static void authcache_remove(struct userdata *ud, struct cacheentry *a);
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-static void cliententry_remove(struct userdata *ud, struct cliententry *e);
-#endif
 static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source);
 static void gc_configure(struct userdata *ud);
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
@@ -967,6 +965,22 @@ int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *ide
 #endif /* BE_PSK */
 }
 
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+void cliententry_remove(struct userdata *ud, struct cliententry *e)
+{
+	if (e == NULL)
+		return;
+
+	HASH_DEL(ud->clients, e);
+	free(e->username);
+	free(e->clientid);
+	free(e->backend_name);
+	free(e->gc);
+	free(e);
+}
+#endif
+
+
 static int log_configure(void)
 {
 	const char *value = p_stab("log_dest");
@@ -1010,21 +1024,6 @@ static void authcache_remove(struct userdata *ud, struct cacheentry *a)
 	free(a->backend_name);
 	free(a);
 }
-
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-static void cliententry_remove(struct userdata *ud, struct cliententry *e)
-{
-	if (e == NULL)
-		return;
-
-	HASH_DEL(ud->clients, e);
-	free(e->username);
-	free(e->clientid);
-	free(e->backend_name);
-	free(e->gc);
-	free(e);
-}
-#endif
 
 // static void find_cliententry_remove(struct userdata *ud, struct mosquitto *client)
 // {

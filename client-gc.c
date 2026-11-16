@@ -394,13 +394,7 @@ static void client_gc_remove(struct userdata *ud, time_t now)
             e->clientid ? e->clientid : "(null)",
             (unsigned long)(now >= e->gc->created_at ? now - e->gc->created_at : 0));
 
-        HASH_DEL(ud->clients, e);
-
-        free(e->username);
-        free(e->clientid);
-        free(e->backend_name);
-        free(e->gc);
-        free(e);
+        cliententry_remove(ud, e);
 
         removed++;
     }

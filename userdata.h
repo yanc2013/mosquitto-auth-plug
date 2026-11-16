@@ -64,3 +64,8 @@ struct userdata {
 };
 
 #endif
+
+
+#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+void cliententry_remove(struct userdata *ud, struct cliententry *e);
+#endif
