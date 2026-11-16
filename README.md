@@ -151,6 +151,11 @@ Options therein with a leading ```auth_opt_``` are handed to the plugin. The fol
 | log_dest          | stderr            |             | this option to support Mosquitto broker logging(stderr/broker/file)
 | log_file          |                   |             | only applies when file is specified in log_dest
 | acl_deny_special_chars | true              |             | Enable(true/false) checking username and client ID for special characters (+, #, /)
+| client_gc_enabled      | false             |             | Enable/disable client garbage collection (see Client Garbage Collection section)
+| client_gc_interval     | 60                |             | Minimum seconds between GC phase executions
+| client_gc_idle_timeout |                   |             | Idle threshold in seconds; 0 disables idle expiration
+| client_gc_max_lifetime |                   |             | Maximum entry age in seconds; 0 disables lifetime expiration
+| client_gc_log_file     |                   |             | Optional path for dedicated GC logs
 
 Individual back-ends each have various additional options described in the sections below.
 
@@ -165,6 +170,70 @@ Set auth/acl_cachejitter to 0 disable any randomization of cache TTL. Setting au
 Caching is useful when your backend lookup is expensive. Remember that ACL lookup will be performed for each message which is sent/received on a topic.
 Jitter is useful to reduce lookup storms that could occur every auth/acl_cacheseconds if lots of clients connect at the same time (for example,
 after a server restart, all your clients may reconnect immediately and each cause ACL lookups every acl_cacheseconds).
+
+**### Client Garbage Collection (GC)**
+
+This fork adds optional client garbage collection to remove stale client-tracking entries and, when necessary, request that the Mosquitto broker disconnect a client. GC is independent of the authentication and ACL back-end selection.
+
+#### Example configuration
+
+```ini
+# GC
+# Enable client garbage collection
+auth_opt_client_gc_enabled true
+# Minimum interval between GC phases: 10 minutes
+auth_opt_client_gc_interval 600
+# Inactivity threshold: 24 hours
+auth_opt_client_gc_idle_timeout 86400
+# Disable maximum client-entry lifetime
+auth_opt_client_gc_max_lifetime 0
+# Dedicated GC log file
+auth_opt_client_gc_log_file /var/log/mosquitto/client-gc.log
+```
+
+#### Configuration options
+
+| Option (in mosquitto.conf) | Example value | Description |
+| --- | --- | --- |
+| `auth_opt_client_gc_enabled`      | `true`                             | Enables the client GC mechanism; set `false` to disable it. |
+| `auth_opt_client_gc_interval`     | `600`                              | Minimum number of seconds between consecutive GC phase executions. |
+| `auth_opt_client_gc_idle_timeout` | `86400`                            | Seconds since the last activity recorded by the plugin before an entry becomes eligible for GC; `0` disables idle expiration. |
+| `auth_opt_client_gc_max_lifetime` | `0`                                | Maximum age of a tracked entry in seconds, independent of activity; `0` disables this limit. |
+| `auth_opt_client_gc_log_file`     | `/var/log/mosquitto/client-gc.log` | File for GC-specific logs. When omitted or empty, GC messages fall back to the plugin's normal logger. |
+
+The values above are a deployment example, **not a statement of the built-in defaults**. All five directives use the `auth_opt_` prefix required by Mosquitto's plugin configuration.
+
+#### How GC runs
+
+GC runs in a three-phase cycle: **SCAN → REMOVE → KICK → SCAN**. Only one phase executes per eligible invocation:
+
+1. **SCAN:** identify entries exceeding the configured idle timeout or maximum lifetime and mark them for disconnection, or for removal when a newer entry with the same client ID exists.
+2. **REMOVE:** free entries already marked `GC_REMOVE_PENDING`.
+3. **KICK:** ask the broker to disconnect clients marked `GC_KICK_PENDING`; successful disconnects and clients not found are marked for removal in a later REMOVE phase.
+
+GC is **not** driven by a background timer. It is checked during authentication and ACL callbacks, and a phase runs only when the configured interval has elapsed. For example, with `600`, the three phases require at least 10 minutes between executions; a full cycle takes at least 30 minutes and may take longer if no relevant callbacks occur.
+
+**Important for persistent MQTT connections:** GC `last_seen` is updated by plugin authentication/ACL activity, not directly by MQTT `PINGREQ` keepalive packets. A connected but otherwise idle client can therefore reach `idle_timeout` and be forcibly disconnected. Choose the threshold with this behavior in mind and verify that applications reconnect and restore subscriptions as expected.
+
+#### GC logging and rotation
+
+With `auth_opt_client_gc_log_file` set, GC emits initialization, SCAN, REMOVE, KICK, and elapsed-time messages to the configured file. Ensure that the Mosquitto service account can write to the file and its directory. The GC log destination is separate from the plugin-wide `auth_opt_log_dest` / `auth_opt_log_file` settings.
+
+Example `/etc/logrotate.d/client-gc` (adjust owner/group to match your Mosquitto service):
+
+```conf
+/var/log/mosquitto/client-gc.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    create 0640 mosquitto mosquitto
+}
+```
+
+Test the rotation configuration with `sudo logrotate -d /etc/logrotate.d/client-gc` (dry run), or `sudo logrotate -v -f /etc/logrotate.d/client-gc` to force an actual rotation. Confirm that new GC messages are written to the current log after rotation. The example assumes the GC file logger opens and closes the file for each write; if it holds the file descriptor open, rotation requires a different strategy.
+
 
 ### MySQL auth
 
