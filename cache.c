@@ -125,7 +125,7 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
+			_log(LOG_DEBUG, "[CACHE] acl_cache Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 			HASH_DEL(ud->aclcache, a);
 			free(a->backend_name);
 			free(a);
@@ -137,7 +137,7 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 		a->expire_time = now + cacheseconds;
 		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 		HASH_ADD_STR(ud->aclcache, hex, a);
-		_log(LOG_DEBUG, " Cached  [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
+		_log(LOG_DEBUG, "[CACHE] acl_cache Cached  [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 	}
 
 	/*
@@ -147,7 +147,7 @@ void acl_cache(const char *clientid, const char *username, const char *topic, in
 
 	HASH_ITER(hh, ud->aclcache, a, tmp) {
 		if (now > a->expire_time) {
-			_log(LOG_DEBUG, " Cleanup [%s]", a->hex);
+			_log(LOG_DEBUG, "[CACHE] acl_cache Cleanup [%s]", a->hex);
 			HASH_DEL(ud->aclcache, a);
 			free(a->backend_name);
 			free(a);
@@ -182,7 +182,7 @@ int acl_cache_q(const char *clientid, const char *username, const char *topic, i
 		// printf("---> CACHED! %d\n", a->granted);
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
+			_log(LOG_DEBUG, "[CACHE] acl_cache_q Expired [%s] for (%s,%s,%d) by backend %s", hex, clientid, username, access, cache_backend);
 			HASH_DEL(ud->aclcache, a);
 			free(a->backend_name);
 			free(a);
@@ -236,7 +236,7 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
+			_log(LOG_DEBUG, "[CACHE] auth_cache Expired [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
 			HASH_DEL(ud->authcache, a);
 			free(a->backend_name);
 			free(a);
@@ -249,7 +249,7 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 		a->backend_name = backend_name ? strdup(backend_name) : NULL;
 
 		HASH_ADD_STR(ud->authcache, hex, a);
-		_log(LOG_DEBUG, " Cached  [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
+		_log(LOG_DEBUG, "[CACHE] auth_cache Cached  [%s] for (%s) by backend %s", hex, username, backend_name ? backend_name : "none");
 	}
 
 	/*
@@ -259,7 +259,7 @@ void auth_cache(const char *username, const char *password, int granted, void *u
 
 	HASH_ITER(hh, ud->authcache, a, tmp) {
 		if (now > a->expire_time) {
-			_log(LOG_DEBUG, " Cleanup [%s]", a->hex);
+			_log(LOG_DEBUG, "[CACHE] auth_cache Cleanup [%s]", a->hex);
 			HASH_DEL(ud->authcache, a);
 			free(a->backend_name);
 			free(a);
@@ -297,7 +297,7 @@ int auth_cache_q(const char *username, const char *password, void *userdata, con
 	HASH_FIND_STR(ud->authcache, hex, a);
 	if (a) {
 		if (time(NULL) > a->expire_time) {
-			_log(LOG_DEBUG, " Expired [%s] for (%s)", hex, username);
+			_log(LOG_DEBUG, "[CACHE] auth_cache_q Expired [%s] for (%s)", hex, username);
 			HASH_DEL(ud->authcache, a);
 			free(a->backend_name);
 			free(a);
