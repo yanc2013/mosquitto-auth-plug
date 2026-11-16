@@ -541,7 +541,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 	}
 
 	/* free MQTT Client GC manager */
-	free(ud->gc_mgr);
+	client_gc_cleanup(ud);
 	free(ud);
 
 	return MOSQ_ERR_SUCCESS;
@@ -1074,7 +1074,10 @@ static void gc_configure(struct userdata *ud)
 	value = p_stab("client_gc_max_lifetime");
 	unsigned int gc_lifetime = value ? (unsigned int)strtoul(value, NULL, 10) : 0;
 
-	client_gc_init(ud, gc_enabled, gc_interval, gc_idle, gc_lifetime);
+	value = p_stab("client_gc_log_file");
+	const char *gc_log_file = value;
+
+	client_gc_init(ud, gc_enabled, gc_interval, gc_idle, gc_lifetime, gc_log_file);
 }
 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
@@ -1090,3 +1093,4 @@ static void client_gc_touch_if_success(struct cliententry *e, int granted)
 		client_gc_touch(e->gc);
 }
 #endif
+

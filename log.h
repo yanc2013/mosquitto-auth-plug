@@ -49,6 +49,7 @@ extern void (*_log)(int priority, const char *fmt, ...);
 void log_init(void);
 void __auth_log(int priority, const char *fmt, ...);
 void __file_log(int priority, const char *fmt, ...);
+void __file_vlog_path(const char *path, int priority, const char *fmt, va_list va);
 void __log(int priority, const char *fmt, ...);
 void _fatal(const char *fmt, ...);
 

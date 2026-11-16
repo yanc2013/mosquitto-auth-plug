@@ -45,8 +45,8 @@
 int log_quiet=0;
 auth_log_dest_t log_dest = AUTH_LOG_STDERR;
 char log_file[2048] = {0};
-
 void (*_log)(int priority, const char *fmt, ...);
+
 
 void log_init(void)
 {
@@ -89,37 +89,54 @@ void __auth_log(int priority, const char *fmt, ...)
 
 void __file_log(int priority, const char *fmt, ...)
 {
-	FILE *file;
-	time_t now;
-	struct tm tm_info;
-	char time_str[64];
-	char *buffer = NULL;
 	va_list va;
 
-	if (log_file[0] == '\0')
-		return;
+	va_start(va, fmt);
+	__file_vlog_path(log_file, priority, fmt, va);
+	va_end(va);
+}
 
-	file = fopen(log_file, "a");
-	if (file == NULL) {
-		__log(LOG_NOTICE, "Warning: Cannot open log file (%s): %s", log_file, strerror(errno));
-		return;
-	}
-
-	now = time(NULL);
-	if (localtime_r(&now, &tm_info) == NULL) {
-		fclose(file);
-		return;
-	}
-	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_info);
+void __file_log_path(const char *path, int priority, const char *fmt, ...)
+{
+	va_list va;
 
 	va_start(va, fmt);
-	if (vasprintf(&buffer, fmt, va) != -1) {
-		// write log
-		fprintf(file, "[%s] %s\n", time_str, buffer);
-		free(buffer);
-	}
+	__file_vlog_path(path, priority, fmt, va);
 	va_end(va);
-	fclose(file);
+}
+
+void __file_vlog_path(const char *path, int priority, const char *fmt, va_list va)
+{
+    FILE *file;
+    time_t now;
+    struct tm tm_info;
+    char time_str[64];
+    char *buffer = NULL;
+
+    if (path == NULL || path[0] == '\0')
+        return;
+
+    file = fopen(path, "a");
+    if (file == NULL) {
+        __log(LOG_NOTICE, "Warning: Cannot open log file (%s): %s", path, strerror(errno));
+        return;
+    }
+
+    now = time(NULL);
+    if (localtime_r(&now, &tm_info) == NULL) {
+        fclose(file);
+        return;
+    }
+
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_info);
+
+    if (vasprintf(&buffer, fmt, va) != -1) {
+        // write log
+        fprintf(file, "[%s] %s\n", time_str, buffer);
+        free(buffer);
+    }
+
+    fclose(file);
 }
 
 void __log(int priority, const char *fmt, ...)

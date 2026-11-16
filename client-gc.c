@@ -28,8 +28,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
-
+#include <stdio.h>
+#include <stdarg.h>
 #include <time.h>
 #include <errno.h>
 #include <mosquitto.h>
@@ -114,7 +118,7 @@
      (gc_end.tv_nsec - gc_start.tv_nsec) / 1000000.0)
 
 #define GC_TIMER_LOG(phase, count, processed) \
-    _log(LOG_NOTICE, \
+    _gc_log(LOG_NOTICE, \
         "[CLIENT-GC] %s: clients=%u, processed=%u, elapsed=%.3f ms", \
         phase, (unsigned int)(count), \
         (unsigned int)(processed), GC_TIMER_ELAPSED_MS())
@@ -124,6 +128,9 @@ static bool client_gc_has_newer_client(struct userdata *ud, const struct cliente
 static void client_gc_scan(struct userdata *ud, time_t now);
 static void client_gc_remove(struct userdata *ud, time_t now);
 static void client_gc_kick(struct userdata *ud, time_t now);
+static void _gc_log(int priority, const char *fmt, ...);
+
+static const char *gc_log_file = NULL;
 
 
 /*
@@ -132,14 +139,14 @@ static void client_gc_kick(struct userdata *ud, time_t now);
  * Configure the GC settings and initialize the state required
  * for periodic client scanning, disconnection, and cleanup.
  */
-void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, unsigned int idle_timeout, unsigned int max_lifetime) {
+void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, unsigned int idle_timeout, unsigned int max_lifetime, const char *log_file) {
     if (ud == NULL)
         return;
 
     ud->gc_mgr = calloc(1, sizeof(struct client_gc_manager));
 
     if (ud->gc_mgr == NULL) {
-        _log(LOG_NOTICE, "[CLIENT-GC] Failed to allocate GC manager");
+        _gc_log(LOG_NOTICE, "[CLIENT-GC] Failed to allocate GC manager");
         return;
     }
 
@@ -150,15 +157,40 @@ void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, un
     mgr->idle_timeout = idle_timeout;
     mgr->max_lifetime = max_lifetime;
 
+    mgr->log_file = NULL;
+    if (log_file != NULL && log_file[0] != '\0') {
+        mgr->log_file = strdup(log_file);
+        if (mgr->log_file == NULL) {
+            _gc_log(LOG_NOTICE, "[CLIENT-GC] Failed to allocate log file path");
+        }
+    }
+    gc_log_file = mgr->log_file;
+
     mgr->last_gc_at = time(NULL);
     mgr->phase = GC_PHASE_SCAN;
 
-    _log(LOG_NOTICE,
-        "[CLIENT-GC] INIT: enabled=%d, interval=%u, idle=%u, lifetime=%u",
+    _gc_log(LOG_NOTICE,
+        "[CLIENT-GC] INIT: enabled=%d, interval=%u, idle=%u, lifetime=%u, log_file=%s",
         mgr->enabled,
         mgr->interval,
         mgr->idle_timeout,
-        mgr->max_lifetime);
+        mgr->max_lifetime,
+        mgr->log_file ? mgr->log_file : "(default)");
+}
+
+/* free MQTT Client GC manager */
+void client_gc_cleanup(struct userdata *ud)
+{
+    if (ud == NULL || ud->gc_mgr == NULL)
+        return;
+
+    struct client_gc_manager *mgr = ud->gc_mgr;
+
+    gc_log_file = NULL;
+    free(mgr->log_file);
+    free(mgr);
+
+    ud->gc_mgr = NULL;
 }
 
 /*
@@ -195,6 +227,9 @@ void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, un
  */
 void client_gc_tick(struct userdata *ud)
 {
+    if (ud == NULL || ud->gc_mgr == NULL)
+        return;
+
     struct client_gc_manager *mgr = ud->gc_mgr;
     time_t now = time(NULL);
 
@@ -320,7 +355,7 @@ static void client_gc_scan(struct userdata *ud, time_t now)
 
         processed++;
 
-        _log(LOG_NOTICE, "[CLIENT-GC] SCAN: clientid=%s, state=%s, idle=%lu, lifetime=%lu",
+        _gc_log(LOG_NOTICE, "[CLIENT-GC] SCAN: clientid=%s, state=%s, idle=%lu, lifetime=%lu",
             e->clientid ? e->clientid : "(null)",
             duplicate ? "REMOVE_PENDING" : "KICK_PENDING",
             (unsigned long)(now - gc->last_seen),
@@ -355,7 +390,7 @@ static void client_gc_remove(struct userdata *ud, time_t now)
         if (e->gc->state != GC_REMOVE_PENDING)
             continue;
 
-        _log(LOG_NOTICE, "[CLIENT-GC] REMOVE: clientid=%s, age=%lu",
+        _gc_log(LOG_NOTICE, "[CLIENT-GC] REMOVE: clientid=%s, age=%lu",
             e->clientid ? e->clientid : "(null)",
             (unsigned long)(now >= e->gc->created_at ? now - e->gc->created_at : 0));
 
@@ -408,7 +443,7 @@ static void client_gc_kick(struct userdata *ud, time_t now)
             gc->state = GC_REMOVE_PENDING;
             gc->state_changed_at = now;
 
-            _log(LOG_NOTICE, "[CLIENT-GC] KICK: duplicate clientid=%s, marked REMOVE_PENDING", e->clientid);
+            _gc_log(LOG_NOTICE, "[CLIENT-GC] KICK: duplicate clientid=%s, marked REMOVE_PENDING", e->clientid);
             continue;
         }
 
@@ -424,11 +459,30 @@ static void client_gc_kick(struct userdata *ud, time_t now)
         // if (rc == MOSQ_ERR_SUCCESS)
         //     kicked++;
 
-            _log(LOG_NOTICE, "[CLIENT-GC] KICK: clientid=%s, rc=%d, marked REMOVE_PENDING", e->clientid, rc);
+            _gc_log(LOG_NOTICE, "[CLIENT-GC] KICK: clientid=%s, rc=%d, marked REMOVE_PENDING", e->clientid, rc);
         } else {
-            _log(LOG_NOTICE, "[CLIENT-GC] KICK: clientid=%s, rc=%d (%s)", e->clientid, rc, mosquitto_strerror(rc));
+            _gc_log(LOG_NOTICE, "[CLIENT-GC] KICK: clientid=%s, rc=%d (%s)", e->clientid, rc, mosquitto_strerror(rc));
         }
     }
 
     GC_TIMER_LOG("KICK", HASH_COUNT(ud->clients), kicked);
+}
+
+void _gc_log(int priority, const char *fmt, ...)
+{
+    va_list va;
+    char *buffer = NULL;
+
+    va_start(va, fmt);
+
+    if (gc_log_file != NULL && gc_log_file[0] != '\0') {
+        __file_vlog_path(gc_log_file, priority, fmt, va);
+    } else {
+        if (vasprintf(&buffer, fmt, va) != -1) {
+            _log(priority, "%s", buffer);
+            free(buffer);
+        }
+    }
+
+    va_end(va);
 }
