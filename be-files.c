@@ -389,7 +389,7 @@ static bool read_acl(be_files * conf, FILE * file)
 			entry = read_acl_line(pos);
 			dllist_push_back(&acl_entries, &entry->entry);
 		} else {
-			_log(MOSQ_LOG_WARNING, "failed to parse line: %s", line);
+			_log(MOSQ_LOG_WARNING, "[FILES] read_acl failed to parse line: %s", line);
 		}
 	}
 	return true;
@@ -429,7 +429,7 @@ void *be_files_init()
 	path = p_stab("password_file");
 	file = (path == NULL) ? NULL : fopen(path, "r");
 	if (path != NULL && file == NULL) {
-		_log(MOSQ_LOG_ERR, "failed to open password file: %s", path);
+		_log(MOSQ_LOG_ERR, "[FILES] INIT failed to open password file: %s", path);
 		be_files_destroy(conf);
 		return NULL;
 	}
@@ -443,7 +443,7 @@ void *be_files_init()
 	conf->acl_checks = path != NULL;
 	file = (path == NULL) ? NULL : fopen(path, "r");
 	if (path != NULL && file == NULL) {
-		_log(MOSQ_LOG_ERR, "failed to open ACL file: %s", path);
+		_log(MOSQ_LOG_ERR, "[FILES] INIT failed to open ACL file: %s", path);
 		be_files_destroy(conf);
 		return NULL;
 	}
@@ -538,7 +538,7 @@ static int do_aclcheck(dllist * acl_list,
 					++si;
 					for (t = clientid; *t != '\0'; ++di, ++t) {
 						if ((size_t)(di - buf) >= sizeof(buf) - 1) {
-							_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+							_log(LOG_DEBUG, "[FILES] ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
 							return BACKEND_DEFER;
 						}
 						*di = *t;
@@ -549,7 +549,7 @@ static int do_aclcheck(dllist * acl_list,
 					/* Check whether username can be NULL. username == NULL ? */
 					for (t = username; *t != '\0'; ++di, ++t) {
 						if ((size_t)(di - buf) >= sizeof(buf) - 1) {
-							_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+							_log(LOG_DEBUG, "[FILES] ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
 							return BACKEND_DEFER;
 						}
 						*di = *t;
@@ -557,7 +557,7 @@ static int do_aclcheck(dllist * acl_list,
 					break;
 				default:
 					if ((size_t)(di - buf) >= sizeof(buf) - 1) {
-						_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+						_log(LOG_DEBUG, "[FILES] ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
 						return BACKEND_DEFER;
 					}
 					*di++ = *si;
@@ -566,7 +566,7 @@ static int do_aclcheck(dllist * acl_list,
 				break;
 			default:
 				if ((size_t)(di - buf) >= sizeof(buf) - 1) {
-					_log(LOG_DEBUG, "ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
+					_log(LOG_DEBUG, "[FILES] ACL topic expansion exceeds buffer size (%zu bytes): topic='%s'", sizeof(buf), acl->topic);
 					return BACKEND_DEFER;
 				}
 				*di++ = *si++;
@@ -577,7 +577,7 @@ static int do_aclcheck(dllist * acl_list,
 
 		/* READ / WRITE: topic is an actual topic name. */
 		if (mosquitto_topic_matches_sub(buf, topic, &ret) != MOSQ_ERR_SUCCESS) {
-			_log(MOSQ_LOG_ERR, "invalid topic '%s'", buf);
+			_log(MOSQ_LOG_ERR, "[FILES] ACL invalid topic '%s'", buf);
 		} else if (ret && (access & acl->access) != 0) {
 			return BACKEND_ALLOW;
 		}
@@ -603,7 +603,7 @@ int be_files_aclcheck(void *handle,
      */
 	if (access == MOSQ_ACL_SUBSCRIBE) {
 		/* Allow subscription; actual message delivery is checked by READ ACL. */
-		_log(LOG_DEBUG, "aclcheck(%s, %s, SUBSCRIBE) ALLOWED by files (READ ACL enforced on delivery)", username, topic);
+		_log(LOG_DEBUG, "[FILES] aclcheck(%s, %s, SUBSCRIBE) ALLOWED by files (READ ACL enforced on delivery)", username, topic);
 		return BACKEND_ALLOW;
 	}
 

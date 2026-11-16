@@ -115,7 +115,7 @@ static void client_gc_touch_if_success(struct cliententry *e, int granted);
 int mosquitto_auth_plugin_version(void)
 {
 	log_init();
-	_log(LOG_NOTICE, "*** auth-plug: startup, auth plugin API version: %d", MOSQ_AUTH_PLUGIN_VERSION);
+	_log(LOG_NOTICE, "[PLUG] VER *** auth-plug: startup, auth plugin API version: %d", MOSQ_AUTH_PLUGIN_VERSION);
 
 	/* The generic plugin interface starts at version 5 (MOSQ_PLUGIN_VERSION) */
 
@@ -194,7 +194,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 			}else if(!strcmp(o->value, "true") || !strcmp(o->value, "1")){
 				log_quiet = 1;
 			}else{
-				_log(LOG_NOTICE, "Error: Invalid log_quiet value (%s).", o->value);
+				_log(LOG_NOTICE, "[PLUG] INIT Error: Invalid log_quiet value (%s).", o->value);
 			}
 		}
 		if (!strcmp(o->key, "acl_deny_special_chars")) {
@@ -203,7 +203,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 			}else if(!strcmp(o->value, "true") || !strcmp(o->value, "1")){
 				ud->acl_deny_special_chars = 1;
 			}else{
-				_log(LOG_NOTICE, "Warning: Invalid acl_deny_special_chars value (%s). Defaulting to true", o->value);
+				_log(LOG_NOTICE, "[PLUG] INIT Warning: Invalid acl_deny_special_chars value (%s). Defaulting to true", o->value);
 			}
 		}
 #if 0
@@ -235,7 +235,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 
 	_p = p = strdup(backends);
 
-	_log(LOG_NOTICE, "** Configured order: %s\n", p);
+	_log(LOG_NOTICE, "[PLUG] INIT ** Configured order: %s\n", p);
 
 	ud->be_list = (struct backend_p **)malloc((sizeof (struct backend_p *)) * (NBACKENDS + 1));
 
@@ -568,6 +568,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	int match, authenticated = FALSE, nord, granted, rc, has_error = FALSE;
 	const char *cached_backend = NULL;
 	unsigned int tracked = 0;
+	const char *id = NULL;
 #if MOSQ_AUTH_PLUGIN_VERSION < 3
 	struct mosquitto *client = NULL;
 #endif
@@ -581,7 +582,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 
 	struct cliententry *e;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
-	const char *id = mosquitto_client_id(client);
+	id = mosquitto_client_id(client);
 	tracked = HASH_COUNT(ud->clients);
 	if (e) {
 		free(e->username);
@@ -613,12 +614,11 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	}
 #endif
 
-	_log(LOG_DEBUG, "mosquitto_auth_unpwd_check(%s) Tracked clients: %u", (username) ? username : "<nil>", tracked);
+	_log(LOG_DEBUG, "[PLUG] AUTH unpwd_check(username=%s, clientid=%s) Tracked clients: %u", (username) ? username : "<nil>", (id) ? id : "<nil>", tracked);
 
 	granted = auth_cache_q(username, password, userdata, &cached_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
-		_log(LOG_DEBUG, "getuser(%s) CACHEDAUTH: %d",
-			username, (granted == MOSQ_ERR_SUCCESS) ? TRUE : FALSE);
+		_log(LOG_DEBUG, "[PLUG] AUTH getuser(%s) CACHEDAUTH: %d", username, (granted == MOSQ_ERR_SUCCESS) ? TRUE : FALSE);
 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		if (e) {
@@ -641,7 +641,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	for (nord = 0, bep = ud->be_list; bep && *bep; bep++, nord++) {
 		struct backend_p *b = *bep;
 
-		_log(LOG_DEBUG, "** checking backend %s", b->name);
+		_log(LOG_DEBUG, "[PLUG] AUTH ** checking backend %s", b->name);
 
 		/*
 		 * The ->getuser() routine can decide to authenticate by returning BACKEND_ALLOW
@@ -686,7 +686,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	}
 #endif
 
-	_log(LOG_DEBUG, "getuser(%s) AUTHENTICATED=%d by %s",
+	_log(LOG_DEBUG, "[PLUG] AUTH getuser(%s) AUTHENTICATED=%d by %s",
 		username, authenticated, (backend_name) ? backend_name : "none");
 
 	if (phash != NULL) {
@@ -695,7 +695,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 
 	granted = (authenticated) ? MOSQ_ERR_SUCCESS : MOSQ_DENY_AUTH;
 	if (granted == MOSQ_DENY_AUTH && has_error) {
-		_log(LOG_DEBUG, "getuser(%s) AUTHENTICATED=N HAS_ERROR=Y => ERR_UNKNOWN",
+		_log(LOG_DEBUG, "[PLUG] AUTH getuser(%s) AUTHENTICATED=N HAS_ERROR=Y => ERR_UNKNOWN",
 			username);
 		granted = MOSQ_ERR_UNKNOWN;
 	}
@@ -772,17 +772,17 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 */
 	if (ud->acl_deny_special_chars) {
 		if(username && strpbrk(username, "+#/")){
-			_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous username \"%s\"", username);
+			_log(MOSQ_LOG_NOTICE, "[PLUG] ACL denying access to client with dangerous username \"%s\"", username);
 			return MOSQ_DENY_ACL;
 		}
 
 		if(clientid && strpbrk(clientid, "+#/")){
-			_log(MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous client id \"%s\"", clientid);
+			_log(MOSQ_LOG_NOTICE, "[PLUG] ACL denying access to client with dangerous client id \"%s\"", clientid);
 			return MOSQ_DENY_ACL;
 		}
 	}
 
-	_log(LOG_DEBUG, "mosquitto_auth_acl_check(..., %s, %s, %s, %s)",
+	_log(LOG_DEBUG, "[PLUG] ACL acl_check(..., %s, %s, %s, %s)",
 		clientid ? clientid : "NULL",
 		username ? username : "NULL",
 		topic ? topic : "NULL",
@@ -793,7 +793,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	// !client_cert_auth && auth_backend == NULL ???
 	granted = acl_cache_q(clientid, username, topic, access, userdata, auth_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
-		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d[%s] by backend %s",
+		_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) CACHEDAUTH: %d[%s] by backend %s",
 			username, topic, access, granted, granted == MOSQ_ERR_SUCCESS ? "ALLOW" : "DEFER", auth_backend ? auth_backend : "none"); 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		/* Update client activity after a successful authentication or ACL check */
@@ -812,7 +812,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 
 	if (ud->superusers) {
 		if (fnmatch(ud->superusers, username, 0) == 0) {
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) GLOBAL SUPERUSER=Y",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) GLOBAL SUPERUSER=Y",
 				username, topic, access);
 			granted = MOSQ_ERR_SUCCESS;
 			goto outout;
@@ -824,17 +824,17 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 
 		match = b->superuser(b->conf, username);
 		if (match == BACKEND_ALLOW) {
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) SUPERUSER=Y by %s",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) SUPERUSER=Y by %s",
 				username, topic, access, b->name);
 			granted = MOSQ_ERR_SUCCESS;
 			goto outout;
 		} else if (match == BACKEND_DENY) {
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) SUPERUSER=N by %s",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) SUPERUSER=N by %s",
 				username, topic, access, b->name);
 			granted = MOSQ_DENY_ACL;
 			goto outout;
 		} else if (match == BACKEND_ERROR) {
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) HAS_ERROR=Y by %s",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) HAS_ERROR=Y by %s",
 				username, topic, access, b->name);
 			has_error = TRUE;
 		}
@@ -847,7 +847,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	/* Authentication backend must be available */
 	if (!client_cert_auth && auth_backend == NULL) {
-		_log(LOG_NOTICE, "aclcheck(%s): authentication backend not available", username ? username : "NULL");
+		_log(LOG_NOTICE, "[PLUG] ACL aclcheck(%s): authentication backend not available", username ? username : "NULL");
 		granted = MOSQ_DENY_ACL;
 		goto outout;
 	}
@@ -868,7 +868,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		// _log(LOG_DEBUG, "ACL backend result: %s, match=%d", b->name, match);
 		if (match == BACKEND_ALLOW) {
 			backend_name = b->name;
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) trying to acl with %s",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) trying to acl with %s",
 				username, topic, access, b->name);
 			authorized = TRUE;
 			break;
@@ -877,13 +877,13 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 			authorized = FALSE;
 			break;
 		} else if (match == BACKEND_ERROR) {
-			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) HAS_ERROR=Y by %s",
+			_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) HAS_ERROR=Y by %s",
 				username, topic, access, b->name);
 			has_error = TRUE;
 		}
 	}
 
-	_log(LOG_DEBUG, "aclcheck(%s, %s, %d) AUTHORIZED=%d[%s] by %s",
+	_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) AUTHORIZED=%d[%s] by %s",
 		username, topic, access, authorized, authorized ? "ALLOW" : "NOT ALLOWED(MOSQ_DENY_ACL)", (backend_name) ? backend_name : "none"); 
 
 	granted = (authorized) ?  MOSQ_ERR_SUCCESS : MOSQ_DENY_ACL;
@@ -891,7 +891,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
    outout:	/* goto fail goto fail */
 
 	if (granted == MOSQ_DENY_ACL && has_error) {
-		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) AUTHORIZED=N HAS_ERROR=Y => ERR_UNKNOWN",
+		_log(LOG_DEBUG, "[PLUG] ACL aclcheck(%s, %s, %d) AUTHORIZED=N HAS_ERROR=Y => ERR_UNKNOWN",
 			username, topic, access);
 		granted = MOSQ_ERR_UNKNOWN;
 	}
@@ -941,7 +941,7 @@ int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *ide
 	} else if (rc == BACKEND_DENY) {
 		psk_found = FALSE;
 	} else {
-		_log(LOG_DEBUG, "psk_key_get(hint=%s, identity=%s) from [%s] finds PSK: %d",
+		_log(LOG_DEBUG, "[PLUG] AUTH-PSK psk_key_get(hint=%s, identity=%s) from [%s] finds PSK: %d",
 			hint, identity, database,
 			psk_key ? 1 : 0);
 
@@ -994,11 +994,11 @@ static int log_configure(void)
 			snprintf(log_file, sizeof(log_file), "%s", file);
 			log_dest = AUTH_LOG_FILE;
 		} else {
-			__log(LOG_NOTICE, "Warning: log_file is not configured, using stderr.");
+			__log(LOG_NOTICE, "[PLUG] CONF Warning: log_file is not configured, using stderr.");
 			log_dest = AUTH_LOG_STDERR;
 		}
 	} else {
-		__log(LOG_NOTICE, "Warning: Invalid log_dest value (%s), using stderr.", value);
+		__log(LOG_NOTICE, "[PLUG] CONF Warning: Invalid log_dest value (%s), using stderr.", value);
 		log_dest = AUTH_LOG_STDERR;
 	}
 
@@ -1046,7 +1046,7 @@ static void auth_failure_log(struct userdata *ud, struct mosquitto *client, cons
 #endif
 
 	_log(LOG_DEBUG,
-		"AUTH FAILED (%s): username=%s, clientid=%s, result=%d, tracked=%u",
+		"[PLUG] AUTH FAILED (%s): username=%s, clientid=%s, result=%d, tracked=%u",
 		source,
 		username ? username : "NULL",
 		clientid ? clientid : "NULL",

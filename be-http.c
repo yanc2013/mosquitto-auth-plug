@@ -185,8 +185,8 @@ static int http_post(void *handle, char *uri, const char *clientid, const char *
 		string_acc,
 		escaped_clientid);
 
-	_log(LOG_DEBUG, "url=%s", url);
-	_log(LOG_DEBUG, "data=%s", data);
+	_log(LOG_DEBUG, "[HTTP] url=%s", url);
+	_log(LOG_DEBUG, "[HTTP] data=%s", data);
 	// curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
 	curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -209,7 +209,7 @@ static int http_post(void *handle, char *uri, const char *clientid, const char *
 			//_log(LOG_NOTICE, "http auth fail re=%d respCode=%d", re, respCode);
 		}
 	} else {
-		_log(LOG_DEBUG, "http req fail url=%s re=%s", url, curl_easy_strerror(re));
+		_log(LOG_DEBUG, "[HTTP] http req fail url=%s re=%s", url, curl_easy_strerror(re));
 		ok = BACKEND_ERROR;
 	}
 
@@ -286,15 +286,15 @@ void *be_http_init()
 
 	conf->retry_count = p_stab("http_retry_count") == NULL ? 3 : atoi(p_stab("http_retry_count"));
 
-	_log(LOG_DEBUG, "with_tls=%s", conf->with_tls);
-	_log(LOG_DEBUG, "getuser_uri=%s", getuser_uri);
-	_log(LOG_DEBUG, "superuser_uri=%s", superuser_uri);
-	_log(LOG_DEBUG, "aclcheck_uri=%s", aclcheck_uri);
+	_log(LOG_DEBUG, "[HTTP] INIT with_tls=%s", conf->with_tls);
+	_log(LOG_DEBUG, "[HTTP] INIT getuser_uri=%s", getuser_uri);
+	_log(LOG_DEBUG, "[HTTP] INIT superuser_uri=%s", superuser_uri);
+	_log(LOG_DEBUG, "[HTTP] INIT aclcheck_uri=%s", aclcheck_uri);
 
-	_log(LOG_DEBUG, "getuser_params=%s", conf->getuser_envs);
-	_log(LOG_DEBUG, "superuser_params=%s", conf->superuser_envs);
-	_log(LOG_DEBUG, "aclcheck_params=%s", conf->aclcheck_envs);
-	_log(LOG_DEBUG, "retry_count=%d", conf->retry_count);
+	_log(LOG_DEBUG, "[HTTP] INIT getuser_params=%s", conf->getuser_envs);
+	_log(LOG_DEBUG, "[HTTP] INIT superuser_params=%s", conf->superuser_envs);
+	_log(LOG_DEBUG, "[HTTP] INIT aclcheck_params=%s", conf->aclcheck_envs);
+	_log(LOG_DEBUG, "[HTTP] INIT retry_count=%d", conf->retry_count);
 
 	return (conf);
 };
