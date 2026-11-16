@@ -274,7 +274,11 @@ static acl_entry *read_acl_line(const char *line)
 	size_t len;
 	int access;
 
-	if (strncmp("readwrite", line, 9) == 0 && (line[9] == ' ' || line[9] == '\t')) {
+	if (strncmp("deny", line, 4) == 0 && (line[4] == ' ' || line[4] == '\t')) {
+		access = MOSQ_ACL_NONE;
+		pos = &line[5];
+		for (; (*pos == ' ' || *pos == '\t') && *pos != '\0'; ++pos);
+	} else if (strncmp("readwrite", line, 9) == 0 && (line[9] == ' ' || line[9] == '\t')) {
 		access = MOSQ_ACL_READ | MOSQ_ACL_WRITE;
 		pos = &line[10];
 		while (*pos == ' ' || *pos == '\t')
@@ -518,6 +522,7 @@ static int do_aclcheck(dllist * acl_list,
 	const char *t;
 	const char *si;
 	char *di;
+	int result = BACKEND_DEFER;
 
 	dllist_for_each_element(acl_list, acl, entry) {
 		/*
@@ -578,11 +583,15 @@ static int do_aclcheck(dllist * acl_list,
 		/* READ / WRITE: topic is an actual topic name. */
 		if (mosquitto_topic_matches_sub(buf, topic, &ret) != MOSQ_ERR_SUCCESS) {
 			_log(MOSQ_LOG_ERR, "[FILES] ACL invalid topic '%s'", buf);
-		} else if (ret && (access & acl->access) != 0) {
-			return BACKEND_ALLOW;
+		} else {
+			/* topic deny /test/private/# */
+			if (ret && acl->access == MOSQ_ACL_NONE)
+				return BACKEND_DENY;
+			if (ret && (access & acl->access) != 0)
+				result = BACKEND_ALLOW;
 		}
 	}
-	return BACKEND_DEFER;
+	return result;
 }
 
 int be_files_aclcheck(void *handle,
@@ -593,12 +602,14 @@ int be_files_aclcheck(void *handle,
 {
 	be_files *const conf = (be_files *) handle;
 	pwd_entry *pwd = find_pwd(conf, username);
-	int ret = 0;
+	int ret = BACKEND_DEFER;
+	int global_ret = BACKEND_DEFER;
 
 	if (!conf->acl_checks)
 		return BACKEND_ALLOW;
 
-	/* SUBSCRIBE: allow the subscription filter.
+	/*
+	 * SUBSCRIBE: allow the subscription filter.
 	 * Actual message delivery is controlled by READ ACL.
      */
 	if (access == MOSQ_ACL_SUBSCRIBE) {
@@ -607,13 +618,33 @@ int be_files_aclcheck(void *handle,
 		return BACKEND_ALLOW;
 	}
 
+	/*
+	 * Check user-specific ACL. 
+	 * (passwords->pwd_entry->acl_entries)
+	 */
 	if (pwd != NULL) {
 		ret = do_aclcheck(&pwd->acl_entries, clientid, username, topic, access);
+		if(ret == BACKEND_DENY)
+			return BACKEND_DENY;
 	}
 
-	if (ret == BACKEND_DEFER)
-		ret = do_aclcheck(&acl_entries, clientid, username, topic, access);
-	return ret;
+	if (dllist_empty(&acl_entries))
+		return ret;
+
+	/*
+	 * Check global ACL.
+	 * (static dllist->acl_entries value)
+	 * when the ret is BACKEND_ALLOW or BACKEND_DEFER
+	 */
+	global_ret = do_aclcheck(&acl_entries, clientid, username, topic, access);
+	if(global_ret == BACKEND_DENY)
+		return BACKEND_DENY;
+
+	/* BACKEND_ALLOW */
+	if (ret == BACKEND_ALLOW || global_ret == BACKEND_ALLOW)
+		return BACKEND_ALLOW;
+
+	return BACKEND_DEFER;
 }
 
 int be_files_aclpatterns_available(void)
