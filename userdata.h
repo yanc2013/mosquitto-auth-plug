@@ -61,6 +61,7 @@ struct userdata {
 	// int log_quiet;
 	int acl_deny_special_chars; /* Enable checking username and client ID for special characters (+, #, /). Default: 1 (1: enabled, 0: disabled) */
 	struct client_gc_manager* gc_mgr; /* MQTT Client GC manager */
+	struct backend_p *acl_backend;    /* ACL backend (`match` or a configured backend name, e.g., `files`, `http`). `match` uses the authentication backend */
 };
 
 #endif

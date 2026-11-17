@@ -151,6 +151,7 @@ Options therein with a leading ```auth_opt_``` are handed to the plugin. The fol
 | log_dest          | stderr            |             | this option to support Mosquitto broker logging(stderr/broker/file)
 | log_file          |                   |             | only applies when file is specified in log_dest
 | acl_deny_special_chars | true              |             | Enable(true/false) checking username and client ID for special characters (+, #, /)
+| acl_backend            | match             |             | ACL backend (`match` or a configured backend name, e.g., `files`, `http`). `match` uses the authentication backend
 | client_gc_enabled      | false             |             | Enable/disable client garbage collection (see Client Garbage Collection section)
 | client_gc_interval     | 60                |             | Minimum seconds between GC phase executions
 | client_gc_idle_timeout |                   |             | Idle threshold in seconds; 0 disables idle expiration

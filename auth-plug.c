@@ -224,10 +224,15 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	}
 
 	/*
+	 * Set up acl_backend with backends value
+	 * NULL = match
+	 */
+	const char *acl_backend_name = p_stab("acl_backend");
+	ud->acl_backend = NULL;
+
+	/*
 	 * Set up back-ends, and tell them to initialize themselves.
 	 */
-
-
 	backends = p_stab("backends");
 	if (backends == NULL) {
 		_fatal("No backends configured.");
@@ -235,7 +240,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 
 	_p = p = strdup(backends);
 
-	_log(LOG_NOTICE, "[PLUG] INIT ** Configured order: %s\n", p);
+	_log(LOG_NOTICE, "[PLUG] INIT ** Configured order: %s , acl_backend=%s\n", p, acl_backend_name);
 
 	ud->be_list = (struct backend_p **)malloc((sizeof (struct backend_p *)) * (NBACKENDS + 1));
 
@@ -476,8 +481,18 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 			_fatal("ERROR: configured back-end `%s' is not compiled in this plugin", q);
 		}
 
+		/* Select ACL backend. */
+		if (acl_backend_name != NULL && strcmp(acl_backend_name, "match") != 0 && strcmp(acl_backend_name, (*bep)->name) == 0) {
+			ud->acl_backend = *bep;
+		}
+
 		ud->be_list[++nord] = NULL;
 		bep++;
+	}
+
+	/* Validate ACL backend configuration. */
+	if (acl_backend_name != NULL && strcmp(acl_backend_name, "match") != 0 && ud->acl_backend == NULL) {
+		_fatal("ERROR: Invalid ACL backend: %s", acl_backend_name);
 	}
 
 	free(_p);
@@ -845,8 +860,8 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 */
 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
-	/* Authentication backend must be available */
-	if (!client_cert_auth && auth_backend == NULL) {
+	/* Authentication backend must be available in match mode */
+	if (!client_cert_auth && auth_backend == NULL && ud->acl_backend == NULL) {
 		_log(LOG_NOTICE, "[PLUG] ACL aclcheck(%s): authentication backend not available", username ? username : "NULL");
 		granted = MOSQ_DENY_ACL;
 		goto outout;
@@ -856,10 +871,16 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	for (bep = ud->be_list; bep && *bep; bep++) {
 		struct backend_p *b = *bep;
 
+		/* Select ACL backend */
+		if (ud->acl_backend != NULL) {
+			if (ud->acl_backend != b) {
+				continue;
+			}
+		}
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		// _log(LOG_DEBUG, "ACL backend: auth=%s, current=%s", auth_backend ? auth_backend : "NULL", b->name);
 		/* Only check the backend that authenticated this client */
-		if (!client_cert_auth && strcmp(auth_backend, b->name) != 0) {
+		else if (!client_cert_auth && strcmp(auth_backend, b->name) != 0) {
 			continue;
 		}
 #endif
