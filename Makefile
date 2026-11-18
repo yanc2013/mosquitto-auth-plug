@@ -7,6 +7,14 @@ BE_LDFLAGS =
 BE_LDADD =
 BE_DEPS =
 BUILD_DIR = build
+ROOT_DIR = .
+SRC_DIR = $(ROOT_DIR)/src
+TOOLS_DIR = $(ROOT_DIR)/tools
+SRC_BACKEND_DIR = $(SRC_DIR)/backend
+SRC_COMMON_DIR = $(SRC_DIR)/common
+SRC_CACHE_DIR = $(SRC_DIR)/cache
+SRC_GC_DIR = $(SRC_DIR)/gc
+TOOLS_NP_DIR = $(TOOLS_DIR)/np
 OBJS = $(BUILD_DIR)/auth-plug.o $(BUILD_DIR)/base64.o $(BUILD_DIR)/pbkdf2-check.o $(BUILD_DIR)/log.o $(BUILD_DIR)/envs.o $(BUILD_DIR)/hash.o $(BUILD_DIR)/be-psk.o $(BUILD_DIR)/backends.o $(BUILD_DIR)/cache.o $(BUILD_DIR)/client-gc.o
 
 BACKENDS =
@@ -130,6 +138,13 @@ OSSLIBS = -L$(OPENSSLDIR)/lib -lcrypto
 CFLAGS := $(CFG_CFLAGS)
 CFLAGS += -I$(MOSQUITTO_SRC)/src/
 CFLAGS += -I$(MOSQUITTO_SRC)/lib/
+CFLAGS += -I$(ROOT_DIR)/
+CFLAGS += -I$(SRC_DIR)/
+CFLAGS += -I$(SRC_BACKEND_DIR)/
+CFLAGS += -I$(SRC_COMMON_DIR)/
+CFLAGS += -I$(SRC_CACHE_DIR)/
+CFLAGS += -I$(SRC_GC_DIR)/
+CFLAGS += -I$(TOOLS_NP_DIR)/
 ifneq ($(OS),Windows_NT)
 	CFLAGS += -fPIC -Wall -Werror
 endif
@@ -161,7 +176,7 @@ printconfig:
 	@echo "LDADD:   $(LDADD)"
 	@echo
 
-
+VPATH = $(SRC_DIR) $(SRC_BACKEND_DIR) $(SRC_COMMON_DIR) $(SRC_CACHE_DIR) $(SRC_GC_DIR) $(TOOLS_NP_DIR)
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(BUILD_DIR)
@@ -170,29 +185,34 @@ $(BUILD_DIR)/%.o: %.c
 $(BUILD_DIR)/auth-plug.so : $(OBJS) $(BE_DEPS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -fPIC -shared -o $@ $(OBJS) $(BE_DEPS) $(LDADD)
 
+# src
+$(BUILD_DIR)/auth-plug.o: auth-plug.c be-cdb.h be-mysql.h be-sqlite.h cache.h Makefile
+# backend
 $(BUILD_DIR)/be-redis.o: be-redis.c be-redis.h log.h hash.h envs.h Makefile
 $(BUILD_DIR)/be-memcached.o: be-memcached.c be-memcached.h log.h hash.h envs.h Makefile
 $(BUILD_DIR)/be-sqlite.o: be-sqlite.c be-sqlite.h Makefile
-$(BUILD_DIR)/auth-plug.o: auth-plug.c be-cdb.h be-mysql.h be-sqlite.h Makefile cache.h
 $(BUILD_DIR)/be-psk.o: be-psk.c be-psk.h Makefile
 $(BUILD_DIR)/be-cdb.o: be-cdb.c be-cdb.h Makefile
 $(BUILD_DIR)/be-mysql.o: be-mysql.c be-mysql.h Makefile
 $(BUILD_DIR)/be-ldap.o: be-ldap.c be-ldap.h Makefile
 $(BUILD_DIR)/be-sqlite.o: be-sqlite.c be-sqlite.h Makefile
+$(BUILD_DIR)/be-postgres.o: be-postgres.c be-postgres.h Makefile
+$(BUILD_DIR)/be-http.o: be-http.c be-http.h backends.h Makefile
+$(BUILD_DIR)/be-jwt.o: be-jwt.c be-jwt.h backends.h Makefile
+$(BUILD_DIR)/be-mongo.o: be-mongo.c be-mongo.h Makefile
+$(BUILD_DIR)/be-files.o: be-files.c be-files.h Makefile
+# common
 $(BUILD_DIR)/pbkdf2-check.o: pbkdf2-check.c base64.h Makefile
 $(BUILD_DIR)/base64.o: base64.c base64.h Makefile
 $(BUILD_DIR)/log.o: log.c log.h Makefile
 $(BUILD_DIR)/envs.o: envs.c envs.h Makefile
 $(BUILD_DIR)/hash.o: hash.c hash.h uthash.h Makefile
-$(BUILD_DIR)/be-postgres.o: be-postgres.c be-postgres.h Makefile
+# cache
 $(BUILD_DIR)/cache.o: cache.c cache.h uthash.h Makefile
-$(BUILD_DIR)/be-http.o: be-http.c be-http.h Makefile backends.h
-$(BUILD_DIR)/be-jwt.o: be-jwt.c be-jwt.h Makefile backends.h
-$(BUILD_DIR)/be-mongo.o: be-mongo.c be-mongo.h Makefile
-$(BUILD_DIR)/be-files.o: be-files.c be-files.h Makefile
+# gc
 $(BUILD_DIR)/client-gc.o: client-gc.c client-gc.h Makefile
-
-$(BUILD_DIR)/np: np.c base64.o
+# tools-np
+$(BUILD_DIR)/np: np.c $(BUILD_DIR)/base64.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@ $(OSSLIBS)
 
 tests:
