@@ -158,7 +158,7 @@ LDADD = $(BE_LDADD) $(OSSLIBS) -lmosquitto
 
 .PHONY: all printconfig tests clean
 
-all: printconfig $(BUILD_DIR) $(BUILD_DIR)/auth-plug.so $(BUILD_DIR)/np tests
+all: printconfig $(BUILD_DIR) $(BUILD_DIR)/auth-plug.so np tests
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -211,10 +211,17 @@ $(BUILD_DIR)/hash.o: hash.c hash.h uthash.h Makefile
 $(BUILD_DIR)/cache.o: cache.c cache.h uthash.h Makefile
 # gc
 $(BUILD_DIR)/client-gc.o: client-gc.c client-gc.h Makefile
-# tools-np
-$(BUILD_DIR)/np: np.c $(BUILD_DIR)/base64.o
-	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@ $(OSSLIBS)
 
+.PHONY: np
+
+# tools-np
+# make -C tools/np
+np:
+	$(MAKE) -C tools/np
+
+.PHONY: tests
+
+# make -C tests
 tests:
 	$(MAKE) -C tests
 
@@ -225,8 +232,9 @@ pwdb.cdb: pwdb.in
 	$(CDB) -c -m  pwdb.cdb pwdb.in
 clean :
 	rm -rf $(BUILD_DIR)
-	rm -f *.o *.so np
-	(cd contrib/tinycdb-0.78; make realclean )
+	$(MAKE) -C contrib/tinycdb-0.78 realclean
+#	rm -f *.o *.so np
+#	(cd contrib/tinycdb-0.78; make realclean )
 
 config.mk:
 	@echo "Please create your own config.mk file"
