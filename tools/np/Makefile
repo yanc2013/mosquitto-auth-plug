@@ -17,7 +17,7 @@ CFLAGS += -Wall -Werror -I$(ROOT_DIR) $(OSSLINC)
 
 LDFLAGS := $(CFG_LDFLAGS)
 
-TARGET := $(BUILD_DIR)/np
+TARGET := $(OBJ_DIR)/np
 
 OBJS := \
     $(OBJ_DIR)/np.o \
@@ -41,7 +41,7 @@ $(OBJ_DIR)/np.o: np.c | $(OBJ_DIR)
 $(OBJ_DIR)/base64.o: base64.c base64.h | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(TARGET): $(OBJS) | $(BUILD_DIR)
+$(TARGET): $(OBJS) | $(OBJ_DIR)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(OSSLIBS)
 
 clean:
