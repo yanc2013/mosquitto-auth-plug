@@ -36,6 +36,8 @@
 #include <stdarg.h>
 #include <time.h>
 #include <errno.h>
+#include <limits.h>
+#include <fnmatch.h>
 #include <mosquitto.h>
 #include <mosquitto_broker.h>
 #include <mosquitto_plugin.h>
@@ -128,19 +130,15 @@ static bool client_gc_has_newer_client(struct userdata *ud, const struct cliente
 static void client_gc_scan(struct userdata *ud, time_t now);
 static void client_gc_remove(struct userdata *ud, time_t now);
 static void client_gc_kick(struct userdata *ud, time_t now);
+static unsigned int client_gc_get_idle_timeout(const struct client_gc_manager *mgr, const char *clientid);
 static void _gc_log(int priority, const char *fmt, ...);
 
 static const char *gc_log_file = NULL;
 
 
-/*
- * Initialize the client garbage collection manager.
- *
- * Configure the GC settings and initialize the state required
- * for periodic client scanning, disconnection, and cleanup.
- */
-void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, unsigned int idle_timeout, unsigned int max_lifetime, const char *log_file) {
-    if (ud == NULL)
+/* create MQTT Client GC manager */
+void client_gc_create(struct userdata *ud) {
+    if (ud == NULL || ud->gc_mgr != NULL)
         return;
 
     ud->gc_mgr = calloc(1, sizeof(struct client_gc_manager));
@@ -149,6 +147,17 @@ void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, un
         _gc_log(LOG_NOTICE, "[CLIENT-GC] Failed to allocate GC manager");
         return;
     }
+}
+
+/*
+ * Initialize the client garbage collection manager.
+ *
+ * Configure the GC settings and initialize the state required
+ * for periodic client scanning, disconnection, and cleanup.
+ */
+void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, unsigned int idle_timeout, unsigned int max_lifetime, const char *log_file) {
+    if (ud == NULL || ud->gc_mgr == NULL)
+        return;
 
     struct client_gc_manager *mgr = ud->gc_mgr;
 
@@ -157,6 +166,7 @@ void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, un
     mgr->idle_timeout = idle_timeout;
     mgr->max_lifetime = max_lifetime;
 
+    free(mgr->log_file);
     mgr->log_file = NULL;
     if (log_file != NULL && log_file[0] != '\0') {
         mgr->log_file = strdup(log_file);
@@ -178,6 +188,60 @@ void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, un
         mgr->log_file ? mgr->log_file : "(default)");
 }
 
+/* add idle_rules value */
+int client_gc_add_idle_rule(struct userdata *ud, const char *value)
+{
+    struct client_gc_manager *mgr;
+    client_gc_idle_rule *rule;
+    client_gc_idle_rule **tail;
+    const char *sep;
+    char *end;
+    unsigned long timeout;
+    size_t len;
+
+    if (!ud || !ud->gc_mgr || !value)
+        return -1;
+
+    mgr = ud->gc_mgr;
+
+    sep = strrchr(value, ':');
+    if (!sep || sep == value || !sep[1])
+        return -1;
+
+    errno = 0;
+    timeout = strtoul(sep + 1, &end, 10);
+
+    if (errno || end == sep + 1 || *end != '\0' ||
+        sep[1] == '-' || timeout == 0 || timeout > UINT_MAX)
+        return -1;
+
+    len = (size_t)(sep - value);
+
+    rule = calloc(1, sizeof(*rule));
+    if (!rule)
+        return -1;
+
+    rule->pattern = malloc(len + 1);
+    if (!rule->pattern) {
+        free(rule);
+        return -1;
+    }
+
+    memcpy(rule->pattern, value, len);
+    rule->pattern[len] = '\0';
+    rule->timeout = (unsigned int)timeout;
+
+    tail = &mgr->idle_rules;
+    while (*tail)
+        tail = &(*tail)->next;
+
+    *tail = rule;
+    
+    _gc_log(LOG_NOTICE, "[CLIENT-GC] INIT: Idle rule added pattern=%s, timeout=%u", rule->pattern, rule->timeout);
+
+    return 0;
+}
+
 /* free MQTT Client GC manager */
 void client_gc_cleanup(struct userdata *ud)
 {
@@ -185,6 +249,16 @@ void client_gc_cleanup(struct userdata *ud)
         return;
 
     struct client_gc_manager *mgr = ud->gc_mgr;
+    client_gc_idle_rule *rule = mgr->idle_rules;
+    client_gc_idle_rule *next;
+
+    while (rule) {
+        next = rule->next;
+        free(rule->pattern);
+        free(rule);
+        rule = next;
+    }
+    mgr->idle_rules = NULL;
 
     gc_log_file = NULL;
     free(mgr->log_file);
@@ -339,7 +413,9 @@ static void client_gc_scan(struct userdata *ud, time_t now)
             continue;
 
         /* idle timeout */
-        bool idle_expired = mgr->idle_timeout > 0 && now >= gc->last_seen && (unsigned long)(now - gc->last_seen) >= mgr->idle_timeout;
+        // bool idle_expired = mgr->idle_timeout > 0 && now >= gc->last_seen && (unsigned long)(now - gc->last_seen) >= mgr->idle_timeout;
+        unsigned int idle_timeout = client_gc_get_idle_timeout(mgr, e->clientid);
+        bool idle_expired = idle_timeout > 0 && now >= gc->last_seen && (unsigned long)(now - gc->last_seen) >= idle_timeout;
 
         /* maximum lifetime expiration */
         bool lifetime_expired = mgr->max_lifetime > 0 && now >= gc->created_at && (unsigned long)(now - gc->created_at) >= mgr->max_lifetime;
@@ -355,10 +431,11 @@ static void client_gc_scan(struct userdata *ud, time_t now)
 
         processed++;
 
-        _gc_log(LOG_NOTICE, "[CLIENT-GC] SCAN: clientid=%s, state=%s, idle=%lu, lifetime=%lu",
+        _gc_log(LOG_NOTICE, "[CLIENT-GC] SCAN: clientid=%s, state=%s, idle=%lu, idle_timeout=%u, lifetime=%lu",
             e->clientid ? e->clientid : "(null)",
             duplicate ? "REMOVE_PENDING" : "KICK_PENDING",
             (unsigned long)(now - gc->last_seen),
+            idle_timeout,
             (unsigned long)(now - gc->created_at));
     }
 
@@ -460,6 +537,20 @@ static void client_gc_kick(struct userdata *ud, time_t now)
     }
 
     GC_TIMER_LOG("KICK", HASH_COUNT(ud->clients), kicked);
+}
+
+static unsigned int client_gc_get_idle_timeout(const struct client_gc_manager *mgr, const char *clientid)
+{
+    const client_gc_idle_rule *rule;
+
+    if (clientid != NULL) {
+        for (rule = mgr->idle_rules; rule != NULL; rule = rule->next) {
+            if (fnmatch(rule->pattern, clientid, 0) == 0)
+                return rule->timeout;
+        }
+    }
+
+    return mgr->idle_timeout;
 }
 
 void _gc_log(int priority, const char *fmt, ...)

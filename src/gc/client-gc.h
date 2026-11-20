@@ -55,19 +55,28 @@ typedef enum {
     GC_PHASE_KICK
 } gc_phase_t;
 
+typedef struct client_gc_idle_rule {
+    char *pattern;
+    unsigned int timeout;
+    struct client_gc_idle_rule *next;
+} client_gc_idle_rule;
+
 struct client_gc_manager {
     bool enabled;
     unsigned int interval;
     unsigned int idle_timeout;
     unsigned int max_lifetime;
     char *log_file;
+    client_gc_idle_rule *idle_rules;
 
     time_t last_gc_at;
     gc_phase_t phase;
 };
 
 
+void client_gc_create(struct userdata *ud);
 void client_gc_init(struct userdata *ud, bool enabled, unsigned int interval, unsigned int idle_timeout, unsigned int max_lifetime, const char *log_file);
+int client_gc_add_idle_rule(struct userdata *ud, const char *value);
 void client_gc_cleanup(struct userdata *ud);
 void client_gc_tick(struct userdata *ud);
 void client_gc_touch(struct client_gc *gc);

@@ -106,7 +106,7 @@ static int log_configure(void);
 static void aclcache_remove(struct userdata *ud, struct cacheentry *a);
 static void authcache_remove(struct userdata *ud, struct cacheentry *a);
 static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source);
-static void gc_configure(struct userdata *ud);
+static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_opts, int auth_opt_count);
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
 static void client_gc_touch_if_success(struct cliententry *e, int granted);
 #endif
@@ -136,6 +136,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	struct backend_p **pskbep;
 	char *psk_database = NULL;
 #endif
+	const char *value;
 
 	log_init();
 
@@ -168,44 +169,13 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	 * and let the back-ends figure out if they have all they
 	 * need upon init()
 	 */
-
+	/* 1. Save all options */
 	for (i = 0, o = auth_opts; i < auth_opt_count; i++, o++) {
 		// _log(LOG_DEBUG, "AuthOptions: key=%s, val=%s", o->key, o->value);
-
+		if (strcmp(o->key, "client_gc_idle_rule") == 0)
+			continue;
 		p_add(o->key, o->value);
 
-		if (!strcmp(o->key, "superusers"))
-			ud->superusers = strdup(o->value);
-		if (!strcmp(o->key, "anonusername")) {
-			free(ud->anonusername);
-			ud->anonusername = strdup(o->value);
-		}
-		if (!strcmp(o->key, "cacheseconds") || !strcmp(o->key, "acl_cacheseconds"))
-			ud->acl_cacheseconds = atol(o->value);
-		if (!strcmp(o->key, "auth_cacheseconds"))
-			ud->auth_cacheseconds = atol(o->value);
-		if (!strcmp(o->key, "acl_cachejitter"))
-			ud->acl_cachejitter = atol(o->value);
-		if (!strcmp(o->key, "auth_cacheijitter"))
-			ud->auth_cachejitter = atol(o->value);
-		if (!strcmp(o->key, "log_quiet")) {
-			if(!strcmp(o->value, "false") || !strcmp(o->value, "0")){
-				log_quiet = 0;
-			}else if(!strcmp(o->value, "true") || !strcmp(o->value, "1")){
-				log_quiet = 1;
-			}else{
-				_log(LOG_NOTICE, "[PLUG] INIT Error: Invalid log_quiet value (%s).", o->value);
-			}
-		}
-		if (!strcmp(o->key, "acl_deny_special_chars")) {
-			if(!strcmp(o->value, "false") || !strcmp(o->value, "0")){
-				ud->acl_deny_special_chars = 0;
-			}else if(!strcmp(o->value, "true") || !strcmp(o->value, "1")){
-				ud->acl_deny_special_chars = 1;
-			}else{
-				_log(LOG_NOTICE, "[PLUG] INIT Warning: Invalid acl_deny_special_chars value (%s). Defaulting to true", o->value);
-			}
-		}
 #if 0
 		if (!strcmp(o->key, "topic_prefix"))
 			ud->topicprefix = strdup(o->value);
@@ -219,9 +189,61 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	 # Only applies when file is specified
 	 # auth_opt_log_file /var/log/mosquitto/auth-plug.log
 	*/
+	/* 2. Configure log destination */
 	if (log_configure() != 0) {
 		_fatal("Invalid log_dest configuration");
 	}
+
+	/* 3. Configure log_quiet */
+	value = p_stab("log_quiet");
+	if (value) {
+		if(!strcmp(value, "false") || !strcmp(value, "0")){
+			log_quiet = 0;
+		}else if(!strcmp(value, "true") || !strcmp(value, "1")){
+			log_quiet = 1;
+		}else{
+			_log(LOG_NOTICE, "[PLUG] INIT Error: Invalid log_quiet value (%s).", value);
+		}
+	}
+
+	/* 4. Read other options using p_stab() */
+	value = p_stab("superusers");
+	if (value) ud->superusers = strdup(value);
+
+	value = p_stab("anonusername");
+	if (value) {
+		free(ud->anonusername);
+		ud->anonusername = strdup(value);
+	}
+
+	value = p_stab("cacheseconds");
+	if (value) ud->acl_cacheseconds =atol(value);
+
+	value = p_stab("acl_cacheseconds");
+	if (value) ud->acl_cacheseconds =atol(value);
+
+	value = p_stab("auth_cacheseconds");
+	if (value) ud->auth_cacheseconds =atol(value);
+
+	value = p_stab("acl_cachejitter");
+	if (value) ud->acl_cachejitter =atol(value);
+
+	value = p_stab("auth_cachejitter");
+	if (value) ud->auth_cachejitter =atol(value);
+
+	value = p_stab("acl_deny_special_chars");
+	if (value) {
+		if(!strcmp(value, "false") || !strcmp(value, "0")){
+			ud->acl_deny_special_chars = 0;
+		}else if(!strcmp(value, "true") || !strcmp(value, "1")){
+			ud->acl_deny_special_chars = 1;
+		}else{
+			_log(LOG_NOTICE, "[PLUG] INIT Warning: Invalid acl_deny_special_chars value (%s). Defaulting to true", value);
+		}
+	}
+	
+	/* create MQTT Client GC manager */
+	client_gc_create(ud);
 
 	/*
 	 * Set up acl_backend with backends value
@@ -504,7 +526,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	* auth_opt_client_gc_idle_timeout 1800
 	* auth_opt_client_gc_max_lifetime 0
 	*/
-	gc_configure(ud);
+	gc_configure(ud, auth_opts, auth_opt_count);
 
 	return (ret);
 }
@@ -1142,9 +1164,11 @@ static void auth_failure_log(struct userdata *ud, struct mosquitto *client, cons
 }
 
 /* Set up MQTT Client GC manager */
-static void gc_configure(struct userdata *ud)
+static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
 {
 	const char *value;
+    struct mosquitto_auth_opt *o;
+    int i;
 
 	value = p_stab("client_gc_enabled");
 	bool gc_enabled = value && strcmp(value, "true") == 0;
@@ -1162,6 +1186,15 @@ static void gc_configure(struct userdata *ud)
 	const char *gc_log_file = value;
 
 	client_gc_init(ud, gc_enabled, gc_interval, gc_idle, gc_lifetime, gc_log_file);
+
+	/* Load GC idle rules from auth_opts */
+	for (i = 0, o = auth_opts; i < auth_opt_count; i++, o++) {
+		if (strcmp(o->key, "client_gc_idle_rule") != 0)
+			continue;
+		if (client_gc_add_idle_rule(ud, o->value) != 0) {
+			_log(LOG_NOTICE, "[CLIENT-GC] Invalid idle rule: %s", o->value ? o->value : "NULL");
+		}
+	}
 }
 
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
