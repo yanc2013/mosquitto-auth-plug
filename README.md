@@ -157,6 +157,7 @@ Options therein with a leading ```auth_opt_``` are handed to the plugin. The fol
 | client_gc_idle_timeout |                   |             | Idle threshold in seconds; 0 disables idle expiration
 | client_gc_max_lifetime |                   |             | Maximum entry age in seconds; 0 disables lifetime expiration
 | client_gc_log_file     |                   |             | Optional path for dedicated GC logs
+| client_gc_idle_rule    |                   |             | Per-client GC idle timeout in seconds, matched by Client ID (e.g., `auth_opt_client_gc_idle_rule clientId-*:3600`)
 
 Individual back-ends each have various additional options described in the sections below.
 
