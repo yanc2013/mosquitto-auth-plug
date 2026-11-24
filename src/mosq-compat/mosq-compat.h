@@ -48,13 +48,10 @@
 # define mosquitto_auth_opt mosquitto_opt
 #endif
 
+
 const char *compat_client_id(struct mosquitto *client);
 const char *compat_client_username(struct mosquitto *client);
 void *compat_client_certificate(struct mosquitto *client);
 
-// const char *compat_client_id(void *client);
-// const char *compat_client_username(void *client);
-// bool compat_client_has_certificate(void *client);
-// int compat_client_kick(const char *clientid);
 
 #endif

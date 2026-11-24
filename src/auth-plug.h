@@ -40,13 +40,7 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 
 int auth_acl_check(void *userdata, int access, struct mosquitto *client,
 					const char *clientid, const char *username, const char *topic);
-
-// int mosquitto_auth_acl_check(void *userdata, int access, struct mosquitto *client, const struct mosquitto_acl_msg *msg)
-// int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *username, const char *topic, int access)
-
 int auth_psk_key_get(void *userdata, struct mosquitto *client, const char *hint, const char *identity, char *key, int max_key_len);
 
-// int mosquitto_auth_psk_key_get(void *userdata, struct mosquitto *client, const char *hint, const char *identity, char *key, int max_key_len)
-// int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *identity, char *key, int max_key_len)
 
 #endif
