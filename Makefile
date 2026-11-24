@@ -10,12 +10,23 @@ BUILD_DIR = build
 ROOT_DIR = .
 SRC_DIR = $(ROOT_DIR)/src
 TOOLS_DIR = $(ROOT_DIR)/tools
+SRC_MOSQ_COMPAT_DIR = $(SRC_DIR)/mosq-compat
 SRC_BACKEND_DIR = $(SRC_DIR)/backend
 SRC_COMMON_DIR = $(SRC_DIR)/common
 SRC_CACHE_DIR = $(SRC_DIR)/cache
 SRC_GC_DIR = $(SRC_DIR)/gc
 TOOLS_NP_DIR = $(TOOLS_DIR)/np
-OBJS = $(BUILD_DIR)/auth-plug.o $(BUILD_DIR)/base64.o $(BUILD_DIR)/pbkdf2-check.o $(BUILD_DIR)/log.o $(BUILD_DIR)/envs.o $(BUILD_DIR)/hash.o $(BUILD_DIR)/be-psk.o $(BUILD_DIR)/backends.o $(BUILD_DIR)/cache.o $(BUILD_DIR)/client-gc.o
+OBJS = $(BUILD_DIR)/auth-plug.o \
+	   $(BUILD_DIR)/mosq-compat-legacy.o \
+	   $(BUILD_DIR)/base64.o \
+	   $(BUILD_DIR)/pbkdf2-check.o \
+	   $(BUILD_DIR)/log.o \
+	   $(BUILD_DIR)/envs.o \
+	   $(BUILD_DIR)/hash.o \
+	   $(BUILD_DIR)/be-psk.o \
+	   $(BUILD_DIR)/backends.o \
+	   $(BUILD_DIR)/cache.o \
+	   $(BUILD_DIR)/client-gc.o
 
 BACKENDS =
 BACKENDSTR =
@@ -140,6 +151,7 @@ CFLAGS += -I$(MOSQUITTO_SRC)/src/
 CFLAGS += -I$(MOSQUITTO_SRC)/lib/
 CFLAGS += -I$(ROOT_DIR)/
 CFLAGS += -I$(SRC_DIR)/
+CFLAGS += -I$(SRC_MOSQ_COMPAT_DIR)/
 CFLAGS += -I$(SRC_BACKEND_DIR)/
 CFLAGS += -I$(SRC_COMMON_DIR)/
 CFLAGS += -I$(SRC_CACHE_DIR)/
@@ -176,7 +188,13 @@ printconfig:
 	@echo "LDADD:   $(LDADD)"
 	@echo
 
-VPATH = $(SRC_DIR) $(SRC_BACKEND_DIR) $(SRC_COMMON_DIR) $(SRC_CACHE_DIR) $(SRC_GC_DIR) $(TOOLS_NP_DIR)
+VPATH = $(SRC_DIR) \
+		$(SRC_MOSQ_COMPAT_DIR) \
+		$(SRC_BACKEND_DIR) \
+		$(SRC_COMMON_DIR) \
+		$(SRC_CACHE_DIR) \
+		$(SRC_GC_DIR) \
+		$(TOOLS_NP_DIR)
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(BUILD_DIR)
@@ -187,6 +205,8 @@ $(BUILD_DIR)/auth-plug.so : $(OBJS) $(BE_DEPS)
 
 # src
 $(BUILD_DIR)/auth-plug.o: auth-plug.c be-cdb.h be-mysql.h be-sqlite.h cache.h Makefile
+# auth-plug-compat
+$(BUILD_DIR)/mosq-compat-legacy.o: mosq-compat-legacy.c mosq-compat.h log.h Makefile
 # backend
 $(BUILD_DIR)/be-redis.o: be-redis.c be-redis.h log.h hash.h envs.h Makefile
 $(BUILD_DIR)/be-memcached.o: be-memcached.c be-memcached.h log.h hash.h envs.h Makefile

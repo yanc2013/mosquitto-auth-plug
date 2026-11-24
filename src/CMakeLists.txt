@@ -27,6 +27,7 @@ option(SUPPORT_DJANGO_HASHERS "Support Django hashers algorithm names" OFF)
 # ==========================================
 set(AUTH_PLUG_SOURCES
     ${PROJECT_SOURCE_DIR}/src/auth-plug.c
+    ${PROJECT_SOURCE_DIR}/src/mosq-compat/mosq-compat-legacy.c
     ${PROJECT_SOURCE_DIR}/src/common/base64.c
     ${PROJECT_SOURCE_DIR}/src/common/pbkdf2-check.c
     ${PROJECT_SOURCE_DIR}/src/common/log.c
@@ -45,6 +46,7 @@ set(AUTH_PLUG_INCLUDE_DIRS
     ${MOSQUITTO_SRC}/lib
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/mosq-compat
     ${PROJECT_SOURCE_DIR}/src/backend
     ${PROJECT_SOURCE_DIR}/src/common
     ${PROJECT_SOURCE_DIR}/src/cache

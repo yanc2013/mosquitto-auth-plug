@@ -37,6 +37,7 @@ option(BUILD_TESTS "Build test binaries" ON)
 # ==========================================
 set(AUTH_PLUG_SOURCES
     src/auth-plug.c
+    src/mosq-compat/mosq-compat-legacy.c
     src/common/base64.c
     src/common/pbkdf2-check.c
     src/common/log.c
@@ -55,6 +56,7 @@ set(AUTH_PLUG_INCLUDE_DIRS
     ${MOSQUITTO_SRC}/lib
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/mosq-compat
     ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cache

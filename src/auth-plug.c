@@ -39,17 +39,6 @@
 #include <fnmatch.h>
 #include <time.h>
 
-#if LIBMOSQUITTO_VERSION_NUMBER >= 1004090
-# define MOSQ_DENY_AUTH	MOSQ_ERR_PLUGIN_DEFER
-# define MOSQ_DENY_ACL	MOSQ_ERR_PLUGIN_DEFER
-#else
-# define MOSQ_DENY_AUTH	MOSQ_ERR_AUTH
-# define MOSQ_DENY_ACL	MOSQ_ERR_ACL_DENIED
-#endif
-
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-# define mosquitto_auth_opt mosquitto_opt
-#endif
 
 #include "log.h"
 #include "hash.h"
@@ -72,6 +61,7 @@
 #include "userdata.h"
 #include "cache.h"
 #include "client-gc.h"
+#include "auth-plug.h"
 
 
 #define STRINGIFY(x) #x
@@ -110,18 +100,8 @@ static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_op
 static void client_gc_touch_if_success(struct cliententry *e, int granted);
 
 
-int mosquitto_auth_plugin_version(void)
-{
-	log_init();
-	_log(LOG_NOTICE, "[PLUG] VER *** auth-plug: startup, auth plugin API version: %d", MOSQ_AUTH_PLUGIN_VERSION);
 
-	/* The generic plugin interface starts at version 5 (MOSQ_PLUGIN_VERSION) */
-
-	// mosquitto 2.0.11 auth plugin API version: 4
-	return MOSQ_AUTH_PLUGIN_VERSION;
-}
-
-int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
+int auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
 {
 	int i;
 	char *backends = NULL, *p, *_p, *q;
@@ -529,7 +509,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 	return (ret);
 }
 
-int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
+int auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
 {
 	struct userdata *ud = (struct userdata *)userdata;
 
@@ -578,22 +558,7 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 	return MOSQ_ERR_SUCCESS;
 }
 
-int mosquitto_auth_security_init(void *userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count, bool reload)
-{
-	return MOSQ_ERR_SUCCESS;
-}
-
-int mosquitto_auth_security_cleanup(void *userdata, struct mosquitto_auth_opt *auth_opts, int auth_opt_count, bool reload)
-{
-	return MOSQ_ERR_SUCCESS;
-}
-
-
-#if MOSQ_AUTH_PLUGIN_VERSION >=3
-int mosquitto_auth_unpwd_check(void *userdata, struct mosquitto *client, const char *username, const char *password)
-#else
-int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char *password)
-#endif
+int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *username, const char *password)
 {
 	struct userdata *ud = (struct userdata *)userdata;
 	struct backend_p **bep;
@@ -608,12 +573,12 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	if (!username || !*username || !password || !*password)
 		return MOSQ_DENY_AUTH;
 
-#if MOSQ_AUTH_PLUGIN_VERSION >=3
+if(client != NULL) {
 	/* Execute client garbage collection */
 	client_gc_tick(ud);
 
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
-	id = mosquitto_client_id(client);
+	id = compat_client_id(client);
 
 	if (e) {
 		free(e->username);
@@ -644,7 +609,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
 	tracked = HASH_COUNT(ud->clients);
-#endif
+}
 
 	// _log(LOG_DEBUG, "[PLUG] AUTH unpwd_check(username=%s, clientid=%s) Tracked clients: %u", (username) ? username : "<nil>", (id) ? id : "<nil>", tracked);
 
@@ -763,11 +728,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	return granted;
 }
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-int mosquitto_auth_acl_check(void *userdata, int access, struct mosquitto *client, const struct mosquitto_acl_msg *msg)
-#else
-int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *username, const char *topic, int access)
-#endif
+int auth_acl_check(void *userdata, int access, struct mosquitto *client,
+					const char *clientid, const char *username, const char *topic)
 {
 	struct userdata *ud = (struct userdata *)userdata;
 	struct backend_p **bep;
@@ -778,10 +740,9 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	struct cliententry *e = NULL;
 	bool match_auth_backend = false;
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-	const char *clientid = NULL;
-	const char *username = NULL;
-	const char *topic = msg->topic;
+if (client != NULL) {
+	clientid = NULL;
+	username = NULL;
 
 	/* Execute client garbage collection */
 	client_gc_tick(ud);
@@ -793,12 +754,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		auth_backend = e->backend_name;
 		match_auth_backend = true;
 	} else {
-		bool client_cert = (mosquitto_client_certificate(client) != NULL);
+		bool client_cert = (compat_client_certificate(client) != NULL);
 		// #include <openssl/x509.h> X509_free(cert);
 
 		if (client_cert == true) {
-			clientid = mosquitto_client_id(client);
-			username = mosquitto_client_username(client);
+			clientid = compat_client_id(client);
+			username = compat_client_username(client);
 
 			/*
 			* Certificate authentication may bypass unpwd_check().
@@ -810,7 +771,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 			return MOSQ_ERR_PLUGIN_DEFER;
 		}
 	}
-#endif
+}
 
 	if (!username || !*username) { 	// anonymous users
 		username = ud->anonusername;
@@ -997,12 +958,7 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	return (granted);
 }
 
-
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-int mosquitto_auth_psk_key_get(void *userdata, struct mosquitto *client, const char *hint, const char *identity, char *key, int max_key_len)
-#else
-int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *identity, char *key, int max_key_len)
-#endif
+int auth_psk_key_get(void *userdata, struct mosquitto *client, const char *hint, const char *identity, char *key, int max_key_len)
 {
 #if BE_PSK
 	struct userdata *ud = (struct userdata *)userdata;
