@@ -105,11 +105,9 @@ int password_check(const char *password, char *hash);
 static int log_configure(void);
 static void aclcache_remove(struct userdata *ud, struct cacheentry *a);
 static void authcache_remove(struct userdata *ud, struct cacheentry *a);
-static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source);
+static void auth_failure_log(struct userdata *ud, const char *clientid, const char *username, int granted, const char *source);
 static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_opts, int auth_opt_count);
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 static void client_gc_touch_if_success(struct cliententry *e, int granted);
-#endif
 
 
 int mosquitto_auth_plugin_version(void)
@@ -262,7 +260,7 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 
 	_p = p = strdup(backends);
 
-	_log(LOG_NOTICE, "[PLUG] INIT ** Configured order: %s , acl_backend=%s\n", p, acl_backend_name);
+	_log(LOG_NOTICE, "[PLUG] INIT ** Configured order: %s , acl_backend=%s\n", p, acl_backend_name ? acl_backend_name : "match");
 
 	ud->be_list = (struct backend_p **)malloc((sizeof (struct backend_p *)) * (NBACKENDS + 1));
 
@@ -555,14 +553,12 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 		}
 	}
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	if (ud->clients != NULL) {
 		struct cliententry *e, *tmp;
 		HASH_ITER(hh, ud->clients, e, tmp) {
 			cliententry_remove(ud, e);
 		}
 	}
-#endif
 
 	if (ud->be_list) {
 		struct backend_p **bep;
@@ -606,9 +602,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	const char *cached_backend = NULL;
 	unsigned int tracked = 0;
 	const char *id = NULL;
-#if MOSQ_AUTH_PLUGIN_VERSION < 3
-	struct mosquitto *client = NULL;
-#endif
+	struct cliententry *e = NULL;
+
 
 	if (!username || !*username || !password || !*password)
 		return MOSQ_DENY_AUTH;
@@ -617,10 +612,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 	/* Execute client garbage collection */
 	client_gc_tick(ud);
 
-	struct cliententry *e;
 	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 	id = mosquitto_client_id(client);
-	tracked = HASH_COUNT(ud->clients);
+
 	if (e) {
 		free(e->username);
 		free(e->clientid);
@@ -649,6 +643,7 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 
 		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
 	}
+	tracked = HASH_COUNT(ud->clients);
 #endif
 
 	// _log(LOG_DEBUG, "[PLUG] AUTH unpwd_check(username=%s, clientid=%s) Tracked clients: %u", (username) ? username : "<nil>", (id) ? id : "<nil>", tracked);
@@ -668,10 +663,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 			granted,
 			(id) ? id : "NULL",
 			(username) ? username : "NULL",
-			(backend_name) ? backend_name : "none",
+			(cached_backend) ? cached_backend : "none",
 			tracked);
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		if (e) {
 			free(e->backend_name);
 			e->backend_name = NULL;
@@ -682,9 +676,8 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 
 		/* Update client activity after a successful authentication or ACL check */
 		client_gc_touch_if_success(e, granted);
-#endif
 
-		auth_failure_log(ud, client, username, granted, "cache");
+		auth_failure_log(ud, id, username, granted, "cache");
 
 		return granted;
 	}
@@ -703,11 +696,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 			free(phash);
 			phash = NULL;
 		}
-#if MOSQ_AUTH_PLUGIN_VERSION >=3	
-		rc = b->getuser(b->conf, username, password, &phash, mosquitto_client_id(client));
-#else
-		rc = b->getuser(b->conf, username, password, &phash, NULL);
-#endif
+
+		rc = b->getuser(b->conf, username, password, &phash, id);
+
 		if (rc == BACKEND_ALLOW) {
 			backend_name = (*bep)->name;
 			authenticated = TRUE;
@@ -731,11 +722,9 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		}
 	}
 
-#if MOSQ_AUTH_PLUGIN_VERSION >=3	
 	if (authenticated && e) {
 		e->backend_name = backend_name ? strdup(backend_name) : NULL;
 	}
-#endif
 
 	// _log(LOG_DEBUG, "[PLUG] AUTH getuser(%s) AUTHENTICATED=%d by %s", username, authenticated, (backend_name) ? backend_name : "none");
 
@@ -764,14 +753,12 @@ int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char 
 		(backend_name) ? backend_name : "none",
 		tracked);
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	/* Update client activity after a successful authentication or ACL check */
 	client_gc_touch_if_success(e, granted);
-#endif
 
 	auth_cache(username, password, granted, userdata, backend_name);
 
-	auth_failure_log(ud, client, username, granted, "backend");
+	auth_failure_log(ud, id, username, granted, "backend");
 
 	return granted;
 }
@@ -788,11 +775,12 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	int match = 0, authorized = FALSE, has_error = FALSE;
 	int granted = MOSQ_DENY_ACL;
 	const char *auth_backend = NULL;
+	struct cliententry *e = NULL;
+	bool match_auth_backend = false;
+
 #if MOSQ_AUTH_PLUGIN_VERSION >= 3
-	struct cliententry *e;
 	const char *clientid = NULL;
 	const char *username = NULL;
-	bool client_cert_auth = false;
 	const char *topic = msg->topic;
 
 	/* Execute client garbage collection */
@@ -803,18 +791,19 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		clientid = e->clientid;
 		username = e->username;
 		auth_backend = e->backend_name;
+		match_auth_backend = true;
 	} else {
 		bool client_cert = (mosquitto_client_certificate(client) != NULL);
+		// #include <openssl/x509.h> X509_free(cert);
 
 		if (client_cert == true) {
 			clientid = mosquitto_client_id(client);
 			username = mosquitto_client_username(client);
 
-			/* Certificate-authenticated clients may bypass unpwd_check().
-			* No authentication backend is recorded, so use the original
-			* ACL behavior and check all configured backends.
+			/*
+			* Certificate authentication may bypass unpwd_check().
+			* No authentication backend matching is required.
 			*/
-			client_cert_auth = true;
 		}
 
 		if (client_cert == false || clientid == NULL || username == NULL) {
@@ -881,10 +870,8 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 			username ? username : "NULL",
 			auth_backend ? auth_backend : "none");
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 		/* Update client activity after a successful authentication or ACL check */
 		client_gc_touch_if_success(e, granted);
-#endif
 
 		return (granted);
 	}
@@ -927,31 +914,29 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 	 * Check authorization in the back-end used to authenticate the user.
 	 */
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	/* Authentication backend must be available in match mode */
-	if (!client_cert_auth && auth_backend == NULL && ud->acl_backend == NULL) {
+	if (match_auth_backend && auth_backend == NULL && ud->acl_backend == NULL) {
 		_log(LOG_NOTICE, "[PLUG] ACL aclcheck(%s): authentication backend not available", username ? username : "NULL");
 		granted = MOSQ_DENY_ACL;
 		goto outout;
 	}
-#endif
 
 	for (bep = ud->be_list; bep && *bep; bep++) {
 		struct backend_p *b = *bep;
 
-		/* Select ACL backend */
+		/* Use the explicitly configured ACL backend */
 		if (ud->acl_backend != NULL) {
 			if (ud->acl_backend != b) {
 				continue;
 			}
 		}
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
+
 		// _log(LOG_DEBUG, "ACL backend: auth=%s, current=%s", auth_backend ? auth_backend : "NULL", b->name);
-		/* Only check the backend that authenticated this client */
-		else if (!client_cert_auth && strcmp(auth_backend, b->name) != 0) {
+
+		/* Match the authentication backend for tracked clients only */
+		else if (match_auth_backend && strcmp(auth_backend, b->name) != 0) {
 			continue;
 		}
-#endif
 
 		match = b->aclcheck((*bep)->conf, clientid, username, topic, access);
 		// _log(LOG_DEBUG, "ACL backend result: %s, match=%d", b->name, match);
@@ -1006,10 +991,8 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 
 	acl_cache(clientid, username, topic, access, granted, userdata, auth_backend);
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 	/* Update client activity after a successful authentication or ACL check */
 	client_gc_touch_if_success(e, granted);
-#endif
 
 	return (granted);
 }
@@ -1036,7 +1019,7 @@ int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *ide
 	for (bep = ud->be_list; bep && *bep; bep++) {
 		struct backend_p *b = *bep;
 		if (!strcmp(database, b->name)) {
-			rc = b->getuser(b->conf, username, NULL, &psk_key);
+			rc = b->getuser(b->conf, username, NULL, &psk_key, NULL);
 			break;
 		}
 
@@ -1072,7 +1055,6 @@ int mosquitto_auth_psk_key_get(void *userdata, const char *hint, const char *ide
 #endif /* BE_PSK */
 }
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 void cliententry_remove(struct userdata *ud, struct cliententry *e)
 {
 	if (e == NULL)
@@ -1085,7 +1067,6 @@ void cliententry_remove(struct userdata *ud, struct cliententry *e)
 	free(e->gc);
 	free(e);
 }
-#endif
 
 
 static int log_configure(void)
@@ -1139,18 +1120,12 @@ static void authcache_remove(struct userdata *ud, struct cacheentry *a)
 // 	cliententry_remove(ud, e);
 // }
 
-static void auth_failure_log(struct userdata *ud, struct mosquitto *client, const char *username, int granted, const char *source)
+static void auth_failure_log(struct userdata *ud, const char *clientid, const char *username, int granted, const char *source)
 {
 	if (granted == MOSQ_ERR_SUCCESS)
 		return;
 
-	unsigned int tracked = 0;
-	const char *clientid = NULL;
-
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
-	clientid = client ? mosquitto_client_id(client) : NULL;
-	tracked = HASH_COUNT(ud->clients);
-#endif
+	unsigned int tracked = HASH_COUNT(ud->clients);
 
 	_log(LOG_DEBUG,
 		"[PLUG] AUTH FAILED (%s): username=%s, clientid=%s, result=%d, tracked=%u",
@@ -1197,7 +1172,6 @@ static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_op
 	}
 }
 
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 /*
  * Update client activity after a successful authentication or ACL check.
  *
@@ -1209,5 +1183,3 @@ static void client_gc_touch_if_success(struct cliententry *e, int granted)
 	if (granted == MOSQ_ERR_SUCCESS && e != NULL && e->gc != NULL)
 		client_gc_touch(e->gc);
 }
-#endif
-

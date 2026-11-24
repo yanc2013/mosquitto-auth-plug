@@ -33,8 +33,8 @@
 #include "backends.h"
 #include "cache.h"
 
-#ifndef __USERDATA_H
-# define _USERDATA_H
+#ifndef USERDATA_H
+#define USERDATA_H
 
 struct cliententry {
 	void *key;
@@ -64,9 +64,7 @@ struct userdata {
 	struct backend_p *acl_backend;    /* ACL backend (`match` or a configured backend name, e.g., `files`, `http`). `match` uses the authentication backend */
 };
 
-#endif
 
-
-#if MOSQ_AUTH_PLUGIN_VERSION >= 3
 void cliententry_remove(struct userdata *ud, struct cliententry *e);
+
 #endif
