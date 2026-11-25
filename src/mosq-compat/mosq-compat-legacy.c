@@ -127,8 +127,6 @@ int mosquitto_auth_plugin_cleanup(void *userdata, struct mosquitto_auth_opt *aut
 }
 
 /*
- * mosq-compat-legacy.c
- *
  * +---------------------------------------+
  * | Common API                            |
  * |                                       |
@@ -185,6 +183,7 @@ void *compat_client_certificate(struct mosquitto *client)
 }
 
 #else
+
 int mosquitto_auth_unpwd_check(void *userdata, const char *username, const char *password)
 {
 	return auth_unpwd_check(userdata, NULL, username, password);
