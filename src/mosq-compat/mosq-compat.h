@@ -36,6 +36,38 @@
 #include <mosquitto_plugin.h>
 
 
+/*
+ * Mosquitto Plugin API Compatibility
+ *
+ *  +-------------------------+    +-------------------------+
+ *  | Auth Plugin API V2/V3/V4|    | Plugin API V5           |
+ *  +------------+------------+    +------------+------------+
+ *               |                              :
+ *               v                              v
+ *  +-------------------------+    +-------------------------+
+ *  | mosq-compat-legacy.c    |    | mosq-compat-v5.c        |
+ *  | Legacy API adapter      |    | Future API adapter      |
+ *  +------------+------------+    +------------+------------+
+ *               |                              :
+ *               +--------------+---------------+
+ *                              |
+ *                              v
+ *               +------------------------------+
+ *               | auth-plug.c                  |
+ *               | Shared core implementation   |
+ *               +------------------------------+
+ *
+ *  Solid lines  : Implemented
+ *  Dotted lines : Planned
+ *
+ *  The compatibility layer handles API differences while
+ *  keeping the core authentication and authorization logic
+ *  independent of plugin API versions.
+ *
+ *  Currently tested build target: Auth Plugin API V4.
+ */
+
+
 #if LIBMOSQUITTO_VERSION_NUMBER >= 1004090
 # define MOSQ_DENY_AUTH	MOSQ_ERR_PLUGIN_DEFER
 # define MOSQ_DENY_ACL	MOSQ_ERR_PLUGIN_DEFER

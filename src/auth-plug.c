@@ -573,43 +573,43 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 	if (!username || !*username || !password || !*password)
 		return MOSQ_DENY_AUTH;
 
-if(client != NULL) {
-	/* Execute client garbage collection */
-	client_gc_tick(ud);
+	if(client != NULL) {
+		/* Execute client garbage collection */
+		client_gc_tick(ud);
 
-	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
-	id = compat_client_id(client);
+		HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
+		id = compat_client_id(client);
 
-	if (e) {
-		free(e->username);
-		free(e->clientid);
-		free(e->backend_name);
-		e->username = strdup(username);
-		e->clientid = id ? strdup(id) : NULL;
-		e->backend_name = NULL;
-	} else {
-		e = (struct cliententry *)malloc(sizeof(struct cliententry));
-		e->key = (void *)client;
-		e->username = strdup(username);
-		e->clientid = id ? strdup(id) : NULL;
-		e->backend_name = NULL;
-		e->gc = NULL;
+		if (e) {
+			free(e->username);
+			free(e->clientid);
+			free(e->backend_name);
+			e->username = strdup(username);
+			e->clientid = id ? strdup(id) : NULL;
+			e->backend_name = NULL;
+		} else {
+			e = (struct cliententry *)malloc(sizeof(struct cliententry));
+			e->key = (void *)client;
+			e->username = strdup(username);
+			e->clientid = id ? strdup(id) : NULL;
+			e->backend_name = NULL;
+			e->gc = NULL;
 
-		/* Create client garbage collection */
-		if (ud->gc_mgr && ud->gc_mgr->enabled) {
-			e->gc = calloc(1, sizeof(struct client_gc));
-			if (e->gc) {
-				e->gc->created_at = time(NULL);
-				e->gc->last_seen = e->gc->created_at;
-				e->gc->state_changed_at = e->gc->created_at;
-				e->gc->state = GC_ACTIVE;
+			/* Create client garbage collection */
+			if (ud->gc_mgr && ud->gc_mgr->enabled) {
+				e->gc = calloc(1, sizeof(struct client_gc));
+				if (e->gc) {
+					e->gc->created_at = time(NULL);
+					e->gc->last_seen = e->gc->created_at;
+					e->gc->state_changed_at = e->gc->created_at;
+					e->gc->state = GC_ACTIVE;
+				}
 			}
-		}
 
-		HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
+			HASH_ADD(hh, ud->clients, key, sizeof(void *), e);
+		}
+		tracked = HASH_COUNT(ud->clients);
 	}
-	tracked = HASH_COUNT(ud->clients);
-}
 
 	granted = auth_cache_q(username, password, userdata, &cached_backend);
 	if (granted != MOSQ_ERR_UNKNOWN) {
@@ -722,38 +722,38 @@ int auth_acl_check(void *userdata, int access, struct mosquitto *client,
 	struct cliententry *e = NULL;
 	bool match_auth_backend = false;
 
-if (client != NULL) {
-	clientid = NULL;
-	username = NULL;
+	if (client != NULL) {
+		clientid = NULL;
+		username = NULL;
 
-	/* Execute client garbage collection */
-	client_gc_tick(ud);
+		/* Execute client garbage collection */
+		client_gc_tick(ud);
 
-	HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
-	if (e) {
-		clientid = e->clientid;
-		username = e->username;
-		auth_backend = e->backend_name;
-		match_auth_backend = true;
-	} else {
-		bool client_cert = (compat_client_certificate(client) != NULL);
-		// #include <openssl/x509.h> X509_free(cert);
+		HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
+		if (e) {
+			clientid = e->clientid;
+			username = e->username;
+			auth_backend = e->backend_name;
+			match_auth_backend = true;
+		} else {
+			bool client_cert = (compat_client_certificate(client) != NULL);
+			// #include <openssl/x509.h> X509_free(cert);
 
-		if (client_cert == true) {
-			clientid = compat_client_id(client);
-			username = compat_client_username(client);
+			if (client_cert == true) {
+				clientid = compat_client_id(client);
+				username = compat_client_username(client);
 
-			/*
-			* Certificate authentication may bypass unpwd_check().
-			* No authentication backend matching is required.
-			*/
-		}
+				/*
+				* Certificate authentication may bypass unpwd_check().
+				* No authentication backend matching is required.
+				*/
+			}
 
-		if (client_cert == false || clientid == NULL || username == NULL) {
-			return MOSQ_ERR_PLUGIN_DEFER;
+			if (client_cert == false || clientid == NULL || username == NULL) {
+				return MOSQ_ERR_PLUGIN_DEFER;
+			}
 		}
 	}
-}
 
 	if (!username || !*username) { 	// anonymous users
 		username = ud->anonusername;
@@ -1044,8 +1044,8 @@ static void auth_failure_log(struct userdata *ud, const char *clientid, const ch
 static void gc_configure(struct userdata *ud, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
 {
 	const char *value;
-    struct mosquitto_auth_opt *o;
-    int i;
+	struct mosquitto_auth_opt *o;
+	int i;
 
 	value = p_stab("client_gc_enabled");
 	bool gc_enabled = value && strcmp(value, "true") == 0;
