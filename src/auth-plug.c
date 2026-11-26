@@ -581,10 +581,8 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 		id = compat_client_id(client);
 
 		/*
-		 * The broker may reuse a client pointer after disconnection.
-		 * Recreate the entry if the client ID has changed or the GC
-		 * state is no longer active, preventing the new client from
-		 * inheriting stale GC state and timestamps.
+		 * Recreate stale or pending client entries to prevent
+		 * inheritance of GC state and timestamps on client reuse.
 		*/
 		if(NULL != e) {
 			bool id_changed = e->clientid == NULL || id == NULL || strcmp(e->clientid, id) != 0;
