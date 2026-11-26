@@ -580,6 +580,33 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 		HASH_FIND(hh, ud->clients, &client, sizeof(void *), e);
 		id = compat_client_id(client);
 
+		/*
+		 * The broker may reuse a client pointer after disconnection.
+		 * Recreate the entry if the client ID has changed or the GC
+		 * state is no longer active, preventing the new client from
+		 * inheriting stale GC state and timestamps.
+		*/
+		if(NULL != e) {
+			bool id_changed = e->clientid == NULL || id == NULL || strcmp(e->clientid, id) != 0;
+			bool gc_pending = e->gc != NULL && e->gc->state != GC_ACTIVE;
+			if(id_changed || gc_pending) {
+				_log(LOG_DEBUG,
+					"[PLUG] AUTH RECREATE: client=%p, old_clientid=%s, new_clientid=%s, gc_state=%d, id_changed=%d, gc_pending=%d, created_at=%lld, last_seen=%lld, state_changed_at=%lld",
+					(void *)client,
+					e->clientid ? e->clientid : "NULL",
+					id ? id : "NULL",
+					e->gc ? (int)e->gc->state : -1,
+					(int)id_changed,
+					(int)gc_pending,
+					e->gc ? (long long)e->gc->created_at : 0LL,
+					e->gc ? (long long)e->gc->last_seen : 0LL,
+					e->gc ? (long long)e->gc->state_changed_at : 0LL);
+				/* Discard the stale or pending client entry. */
+				cliententry_remove(ud, e);
+				e = NULL;
+			}
+		}
+
 		if (e) {
 
 			_log(LOG_DEBUG,
@@ -592,6 +619,7 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 				e->gc ? (long long)e->gc->last_seen : 0LL,
 				e->gc ? (long long)e->gc->state_changed_at : 0LL);
 
+			/* Update existing client entry. */
 			free(e->username);
 			free(e->clientid);
 			free(e->backend_name);
@@ -599,6 +627,7 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 			e->clientid = id ? strdup(id) : NULL;
 			e->backend_name = NULL;
 		} else {
+			/* Create a new client entry. */
 			e = (struct cliententry *)malloc(sizeof(struct cliententry));
 			e->key = (void *)client;
 			e->username = strdup(username);
