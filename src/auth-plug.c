@@ -581,6 +581,17 @@ int auth_unpwd_check(void *userdata, struct mosquitto *client, const char *usern
 		id = compat_client_id(client);
 
 		if (e) {
+
+			_log(LOG_DEBUG,
+				"[PLUG] AUTH REUSE: client=%p, old_clientid=%s, new_clientid=%s, gc_state=%d, created_at=%lld, last_seen=%lld, state_changed_at=%lld",
+				(void *)client,
+				e->clientid ? e->clientid : "NULL",
+				id ? id : "NULL",
+				e->gc ? (int)e->gc->state : -1,
+				e->gc ? (long long)e->gc->created_at : 0LL,
+				e->gc ? (long long)e->gc->last_seen : 0LL,
+				e->gc ? (long long)e->gc->state_changed_at : 0LL);
+
 			free(e->username);
 			free(e->clientid);
 			free(e->backend_name);
@@ -750,6 +761,17 @@ int auth_acl_check(void *userdata, int access, struct mosquitto *client,
 			}
 
 			if (client_cert == false || clientid == NULL || username == NULL) {
+
+				_log(LOG_DEBUG, "[PLUG] ACL DEFER: %s, client=%p, clientid=%s, topic=%s, reason=CLIENT_ENTRY_NOT_FOUND",
+					access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" :
+					access == MOSQ_ACL_WRITE ? "MOSQ_ACL_WRITE" :
+					access == MOSQ_ACL_SUBSCRIBE ? "MOSQ_ACL_SUBSCRIBE" : "MOSQ_ACL_UNKNOWN",
+					(void *)client,
+					compat_client_id(client) ?
+					compat_client_id(client) : "NULL",
+					topic
+				);
+
 				return MOSQ_ERR_PLUGIN_DEFER;
 			}
 		}
